@@ -1,0 +1,74 @@
+# ELK stack for collecting logs from every pod in the cluster.
+#
+#   Filebeat (DaemonSet) -> Logstash :5044 -> Elasticsearch :9200 (TLS) -> Kibana :5601
+#
+# Security is on: Elasticsearch requires a password and serves HTTPS/transport
+# TLS with a CA that this chart generates once and then keeps across upgrades.
+
+elasticVersion: "8.19.5"
+
+# Passwords. Leave empty to generate random ones on first install; they are
+# stored in the <release>-credentials Secret and reused on every upgrade.
+credentials:
+  elasticPassword: ""
+  kibanaSystemPassword: ""
+  logstashPassword: ""
+  kibanaEncryptionKey: ""
+
+# Daily indices written by Logstash, e.g. k8s-logs-2026.09.27
+indexPrefix: k8s-logs
+
+elasticsearch:
+  image: docker.elastic.co/elasticsearch/elasticsearch
+  javaOpts: "-Xms768m -Xmx768m"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      memory: 1536Mi
+  persistence:
+    size: 5Gi
+    # Empty uses the cluster's default StorageClass.
+    storageClass: ""
+
+kibana:
+  image: docker.elastic.co/kibana/kibana
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  service:
+    type: ClusterIP
+    port: 5601
+
+logstash:
+  image: docker.elastic.co/logstash/logstash
+  javaOpts: "-Xms256m -Xmx256m"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 768Mi
+  # Parse NestJS log lines from this namespace/container into structured fields.
+  nestApp:
+    namespace: taskflow
+    container: taskflow-chart
+
+filebeat:
+  image: docker.elastic.co/beats/filebeat
+  # Namespaces whose logs are not shipped (avoid the stack logging itself).
+  excludeNamespaces:
+    - logging
+  resources:
+    requests:
+      cpu: 50m
+      memory: 100Mi
+    limits:
+      memory: 200Mi
+
+# Image for setup jobs/init containers (needs curl; the ES image has it).
+setupImage: docker.elastic.co/elasticsearch/elasticsearch

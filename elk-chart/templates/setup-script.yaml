@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "elk.name" (dict "root" . "component" "setup") }}
+  labels:
+    {{- include "elk.labels" (dict "root" . "component" "setup") | nindent 4 }}
+data:
+  setup.sh: |
+    #!/bin/bash
+    # Idempotent: safe to run from several pods and on every restart.
+    set -euo pipefail
+
+    es() {
+      curl -sS --fail-with-body --cacert /certs/ca.crt -u "elastic:${ELASTIC_PASSWORD}" \
+        -H 'Content-Type: application/json' "$@"
+    }
+
+    echo "waiting for Elasticsearch at ${ES_URL}"
+    until es -o /dev/null "${ES_URL}/_cluster/health?wait_for_status=yellow&timeout=5s" 2>/dev/null; do
+      sleep 5
+    done
+
+    echo "setting kibana_system password"
+    es -X POST "${ES_URL}/_security/user/kibana_system/_password" \
+      -d "{\"password\":\"${KIBANA_SYSTEM_PASSWORD}\"}" >/dev/null
+
+    echo "creating role logstash_writer"
+    es -X PUT "${ES_URL}/_security/role/logstash_writer" -d '{
+      "cluster": ["monitor", "manage_index_templates", "manage_ilm"],
+      "indices": [{
+        "names": ["{{ .Values.indexPrefix }}-*"],
+        "privileges": ["write", "create", "create_index", "manage", "auto_configure"]
+      }]
+    }' >/dev/null
+
+    echo "creating user logstash_internal"
+    es -X PUT "${ES_URL}/_security/user/logstash_internal" \
+      -d "{\"password\":\"${LOGSTASH_PASSWORD}\",\"roles\":[\"logstash_writer\"]}" >/dev/null
+
+    echo "setup done"

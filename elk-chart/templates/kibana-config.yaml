@@ -1,0 +1,19 @@
+{{- $name := include "elk.name" (dict "root" . "component" "kibana") }}
+{{- $ctx := dict "root" . "component" "kibana" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "elk.labels" $ctx | nindent 4 }}
+data:
+  kibana.yml: |
+    server.host: "0.0.0.0"
+    server.name: kibana
+    # lets the readiness probe read /api/status without logging in
+    status.allowAnonymous: true
+    elasticsearch.hosts: ["{{ include "elk.esUrl" . }}"]
+    elasticsearch.username: kibana_system
+    elasticsearch.password: ${KIBANA_SYSTEM_PASSWORD}
+    elasticsearch.ssl.certificateAuthorities: ["/usr/share/kibana/config/certs/ca.crt"]
+    xpack.encryptedSavedObjects.encryptionKey: ${KIBANA_ENCRYPTION_KEY}

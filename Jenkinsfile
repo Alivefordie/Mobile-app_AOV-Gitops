@@ -4,7 +4,7 @@ pipeline {
   options {
     timestamps()
     disableConcurrentBuilds()
-    timeout(time: 30, unit: 'MINUTES')
+    timeout(time: 45, unit: 'MINUTES')
   }
 
   parameters {
@@ -20,6 +20,9 @@ pipeline {
     // params are empty on the very first run, before Jenkins has read this file
     KIND_CLUSTER = "${params.KIND_CLUSTER ?: 'aohelm-test'}"
     NAMESPACE    = "${params.NAMESPACE ?: 'taskflow'}"
+    ELK_RELEASE   = 'elk'
+    ELK_CHART     = './elk-chart'
+    ELK_NAMESPACE = 'logging'
   }
 
   stages {
@@ -41,9 +44,9 @@ pipeline {
       }
     }
 
-    stage('Lint chart') {
+    stage('Lint charts') {
       steps {
-        sh 'helm lint $CHART'
+        sh 'helm lint $CHART $ELK_CHART'
       }
     }
 
@@ -80,6 +83,19 @@ pipeline {
       steps {
         sh 'helm test $RELEASE --namespace $NAMESPACE --logs'
         sh 'kubectl -n $NAMESPACE get pods'
+      }
+    }
+
+    stage('Deploy ELK') {
+      steps {
+        // pods only restart when elk-chart changes; first install pulls ~2 GB of images
+        sh '''
+          helm upgrade --install $ELK_RELEASE $ELK_CHART \
+            --namespace $ELK_NAMESPACE --create-namespace \
+            --wait --timeout 15m
+        '''
+        // passes once the app's logs have reached Elasticsearch
+        sh 'helm test $ELK_RELEASE --namespace $ELK_NAMESPACE --logs --timeout 5m'
       }
     }
   }
