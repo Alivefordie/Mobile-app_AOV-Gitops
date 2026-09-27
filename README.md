@@ -50,18 +50,31 @@ kubectl --context kind-aohelm-test -n taskflow port-forward svc/taskflow-taskflo
 pod logs (/var/log/containers) -> Filebeat (DaemonSet) -> Logstash :5044 -> Elasticsearch :9200 (HTTPS) -> Kibana :5601
 ```
 
-- ติดตั้งอยู่ใน namespace `logging` ผ่าน stage **Deploy ELK** ใน Jenkins หรือจะติดตั้งด้วยมือก็ได้:
+- ก่อนติดตั้งครั้งแรก ต้องสร้าง Secret 2 ตัวเองใน namespace `logging` เพราะ chart ไม่สุ่มรหัสผ่านหรือ cert ให้
+  (ArgoCD render ด้วย `helm template` ซึ่งใช้ `lookup` ไม่ได้ ถ้าให้ chart สุ่ม ค่าจะเปลี่ยนทุกครั้งที่ sync แล้ว login ไม่ได้):
+  ```sh
+  # TLS: elk-tls (ca.crt, tls.crt, tls.key)
+  elk-chart/scripts/create-certs.sh elk logging kind-aohelm-test
+
+  # รหัสผ่าน: elk-es-credentials (kibana-encryption-key ต้องยาวอย่างน้อย 32 ตัว)
+  kubectl --context kind-aohelm-test -n logging create secret generic elk-es-credentials \
+    --from-literal=elastic-password="$(openssl rand -hex 16)" \
+    --from-literal=kibana-system-password="$(openssl rand -hex 16)" \
+    --from-literal=logstash-password="$(openssl rand -hex 16)" \
+    --from-literal=kibana-encryption-key="$(openssl rand -hex 32)"
+  ```
+- ติดตั้งอยู่ใน namespace `logging` ผ่าน ArgoCD (`argocd/elk-app.yaml`) หรือ stage **Deploy ELK** ใน Jenkins หรือจะติดตั้งด้วยมือก็ได้:
   ```sh
   helm upgrade --install elk ./elk-chart --kube-context kind-aohelm-test -n logging --create-namespace --wait --timeout 15m
   ```
-- เปิด security: ต้องใช้รหัสผ่าน และ Elasticsearch ใช้ TLS โดย chart สร้าง CA และรหัสผ่านให้ตอนติดตั้งครั้งแรก แล้วใช้ชุดเดิมทุกครั้งที่ upgrade
+- เปิด security: ต้องใช้รหัสผ่าน และ Elasticsearch ใช้ TLS
 - Logstash แยก log ของ NestJS ออกเป็น field `log.level`, `nest.context`, `nest.message`
 - index รายวันชื่อ `k8s-logs-YYYY.MM.dd` ไม่เก็บ log ของ namespace `logging` เอง
 
 เปิด Kibana:
 ```sh
 # รหัสผ่านของ user elastic
-kubectl --context kind-aohelm-test -n logging get secret elk-credentials -o jsonpath="{.data.elastic-password}" | base64 -d
+kubectl --context kind-aohelm-test -n logging get secret elk-es-credentials -o jsonpath="{.data.elastic-password}" | base64 -d
 kubectl --context kind-aohelm-test -n logging port-forward svc/elk-kibana 5601:5601
 ```
 เข้า http://localhost:5601 → login `elastic` → **Analytics → Discover** → data view **Kubernetes logs**

@@ -31,11 +31,16 @@ Elasticsearch HTTPS URL inside the cluster
 {{- end }}
 
 {{- define "elk.credentialsSecret" -}}
-{{- printf "%s-credentials" .Release.Name }}
+{{- .Values.credentials.existingSecret | default (printf "%s-credentials" .Release.Name) }}
 {{- end }}
 
+{{/*
+Created outside the chart, so ArgoCD never regenerates it. The default name
+differs from the old chart-managed "<release>-certs" so pruning that one
+does not delete this one.
+*/}}
 {{- define "elk.certsSecret" -}}
-{{- printf "%s-certs" .Release.Name }}
+{{- .Values.certs.secretName | default (printf "%s-tls" .Release.Name) }}
 {{- end }}
 
 {{/*
