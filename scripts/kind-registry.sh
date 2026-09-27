@@ -9,7 +9,8 @@
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# pwd -W gives D:/... on Git Bash, where MSYS_NO_PATHCONV stops /d/... being converted.
+ROOT="$(cd "$(dirname "$0")/.." && (pwd -W 2>/dev/null || pwd))"
 CONFIG="$ROOT/kind-config.yaml"
 CLUSTER="$(sed -n 's/^name: *//p' "$CONFIG")"
 REG_NAME=kind-registry
