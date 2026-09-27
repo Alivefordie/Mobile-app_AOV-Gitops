@@ -10,7 +10,7 @@ spec:
 
   source:
     repoURL: https://github.com/Pongohisut007/test-ci-cd.git
-    targetRevision: feature/argocd
+    targetRevision: feature/fix-on-unauthorize
     path: taskflow-chart
 
     helm:
