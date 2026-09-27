@@ -8,7 +8,7 @@ replicaCount: 1
 # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
 image:
   # Built from ../backend/Dockerfile. With kind, load it via `kind load docker-image`.
-  repository: host.docker.internal:5000/taskflow-backend
+  repository: taskflow-backend
   # IfNotPresent works with `kind load`; every CI build uses a new tag.
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
