@@ -3,17 +3,28 @@
 #   Filebeat (DaemonSet) -> Logstash :5044 -> Elasticsearch :9200 (TLS) -> Kibana :5601
 #
 # Security is on: Elasticsearch requires a password and serves HTTPS/transport
-# TLS with a CA that this chart generates once and then keeps across upgrades.
+# TLS. The chart generates neither the passwords nor the certificates.
 
 elasticVersion: "8.19.5"
 
-# Passwords. Leave empty to generate random ones on first install; they are
-# stored in the <release>-credentials Secret and reused on every upgrade.
+# Passwords. Nothing is generated. By default they come from a Secret created
+# outside the chart (see README), with keys elastic-password,
+# kibana-system-password, logstash-password, kibana-encryption-key, so they
+# stay out of git. Set existingSecret to "" to take the four values below
+# instead. The elastic password must match the one Elasticsearch already
+# stores; changing it here does not change it there.
 credentials:
+  existingSecret: elk-es-credentials
   elasticPassword: ""
   kibanaSystemPassword: ""
   logstashPassword: ""
+  # At least 32 characters. Changing it makes Kibana's saved encrypted objects unreadable.
   kibanaEncryptionKey: ""
+
+# TLS for Elasticsearch, created outside the chart with scripts/create-certs.sh
+# (keys: ca.crt, tls.crt, tls.key). Empty uses "<release>-tls".
+certs:
+  secretName: ""
 
 # Daily indices written by Logstash, e.g. k8s-logs-2026.09.27
 indexPrefix: k8s-logs
