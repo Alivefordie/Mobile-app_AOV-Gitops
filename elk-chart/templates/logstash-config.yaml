@@ -1,0 +1,63 @@
+{{- $name := include "elk.name" (dict "root" . "component" "logstash") }}
+{{- $ctx := dict "root" . "component" "logstash" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "elk.labels" $ctx | nindent 4 }}
+data:
+  logstash.yml: |
+    http.host: "0.0.0.0"
+    xpack.monitoring.enabled: false
+  logstash.conf: |
+    input {
+      beats {
+        port => 5044
+      }
+    }
+
+    filter {
+      # Filebeat's kubernetes metadata is missing for lines read before its
+      # cache synced; recover pod/namespace/container from the file name.
+      if ![kubernetes][namespace] {
+        grok {
+          match => {
+            "[log][file][path]" => "^/var/log/containers/%{DATA:[kubernetes][pod][name]}_%{DATA:[kubernetes][namespace]}_%{DATA:[kubernetes][container][name]}-%{BASE16NUM:[container][id]}\.log$"
+          }
+          tag_on_failure => ["_k8s_path_parse_failure"]
+        }
+      }
+
+      # NestJS logs, e.g.
+      # [Nest] 1  - 09/27/2026, 12:08:44 PM     LOG [NestApplication] Nest application successfully started +10ms
+      if [kubernetes][namespace] == "{{ .Values.logstash.nestApp.namespace }}" and [kubernetes][container][name] == "{{ .Values.logstash.nestApp.container }}" {
+        mutate {
+          # strip ANSI colour codes
+          gsub => ["message", "\e\[[0-9;]*m", ""]
+        }
+        grok {
+          match => {
+            "message" => "^\[Nest\] %{NUMBER:[nest][pid]}\s+-\s+%{DATA:[nest][timestamp]}\s+(?<[log][level]>LOG|ERROR|WARN|DEBUG|VERBOSE|FATAL) \[%{DATA:[nest][context]}\] %{GREEDYDATA:[nest][message]}"
+          }
+          tag_on_failure => ["_nest_parse_failure"]
+        }
+        mutate {
+          lowercase => ["[log][level]"]
+        }
+      }
+    }
+
+    output {
+      elasticsearch {
+        hosts => ["{{ include "elk.esUrl" . }}"]
+        user => "logstash_internal"
+        password => "${LOGSTASH_PASSWORD}"
+        ssl_enabled => true
+        ssl_certificate_authorities => ["/usr/share/logstash/config/certs/ca.crt"]
+        index => "{{ .Values.indexPrefix }}-%{+YYYY.MM.dd}"
+        data_stream => false
+        ilm_enabled => false
+        manage_template => false
+      }
+    }

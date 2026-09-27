@@ -1,0 +1,14 @@
+ELK is installed in namespace {{ .Release.Namespace }}.
+
+Log flow: Filebeat (every node) -> {{ .Release.Name }}-logstash:5044 -> {{ include "elk.esUrl" . }} -> {{ .Release.Name }}-kibana
+
+1. Get the password for user "elastic":
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "elk.credentialsSecret" . }} -o jsonpath="{.data.elastic-password}" | base64 -d
+
+2. Open Kibana:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-kibana {{ .Values.kibana.service.port }}:{{ .Values.kibana.service.port }}
+  then browse http://localhost:{{ .Values.kibana.service.port }} and log in as "elastic".
+  Analytics -> Discover -> data view "Kubernetes logs" ({{ .Values.indexPrefix }}-*)
+
+3. Check the pipeline end to end:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

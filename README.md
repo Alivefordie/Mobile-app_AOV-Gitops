@@ -5,8 +5,9 @@ TaskFlow backend (NestJS + PostgreSQL) ที่ deploy ขึ้น Kubernetes 
 ```
 backend/          NestJS API + Dockerfile + docker-compose (สำหรับรันในเครื่อง)
 taskflow-chart/   Helm chart: backend Deployment + PostgreSQL StatefulSet
+elk-chart/        Helm chart: Filebeat -> Logstash -> Elasticsearch -> Kibana (เก็บ log ทุก pod)
 jenkins/          Jenkins สำหรับ CI/CD (docker compose)
-Jenkinsfile       pipeline: test -> lint chart -> build image -> kind load -> helm upgrade -> helm test
+Jenkinsfile       pipeline: test -> lint charts -> build image -> kind load -> deploy app -> smoke test -> deploy ELK
 ```
 
 ## รันในเครื่องด้วย docker compose
@@ -42,3 +43,29 @@ kubectl --context kind-aohelm-test -n taskflow port-forward svc/taskflow-taskflo
 ## Secrets
 
 ค่า R2 และ JWT ห้าม commit ให้ส่งผ่าน `--set secrets.*` หรือสร้าง Secret เองแล้วใช้ `--set secrets.existingSecret=<name>`
+
+## Log monitoring (ELK)
+
+```
+pod logs (/var/log/containers) -> Filebeat (DaemonSet) -> Logstash :5044 -> Elasticsearch :9200 (HTTPS) -> Kibana :5601
+```
+
+- ติดตั้งอยู่ใน namespace `logging` ผ่าน stage **Deploy ELK** ใน Jenkins หรือจะติดตั้งด้วยมือก็ได้:
+  ```sh
+  helm upgrade --install elk ./elk-chart --kube-context kind-aohelm-test -n logging --create-namespace --wait --timeout 15m
+  ```
+- เปิด security: ต้องใช้รหัสผ่าน และ Elasticsearch ใช้ TLS โดย chart สร้าง CA และรหัสผ่านให้ตอนติดตั้งครั้งแรก แล้วใช้ชุดเดิมทุกครั้งที่ upgrade
+- Logstash แยก log ของ NestJS ออกเป็น field `log.level`, `nest.context`, `nest.message`
+- index รายวันชื่อ `k8s-logs-YYYY.MM.dd` ไม่เก็บ log ของ namespace `logging` เอง
+
+เปิด Kibana:
+```sh
+# รหัสผ่านของ user elastic
+kubectl --context kind-aohelm-test -n logging get secret elk-credentials -o jsonpath="{.data.elastic-password}" | base64 -d
+kubectl --context kind-aohelm-test -n logging port-forward svc/elk-kibana 5601:5601
+```
+เข้า http://localhost:5601 → login `elastic` → **Analytics → Discover** → data view **Kubernetes logs**
+
+ตัวอย่าง query: `kubernetes.namespace : "taskflow" and log.level : "error"`
+
+> ELK ใช้ RAM ประมาณ 3 GB (ES 1.5 GB, Kibana 1 GB, Logstash 768 MB) ปรับได้ใน `elk-chart/values.yaml`

@@ -1,0 +1,42 @@
+{{- $name := include "elk.name" (dict "root" . "component" "kibana-dataview") }}
+# Runs after install/upgrade (once Kibana is ready) to create the
+# "Kubernetes logs" data view so logs show up in Discover right away.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "elk.labels" (dict "root" . "component" "kibana-dataview") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: create-dataview
+          image: "{{ .Values.setupImage }}:{{ .Values.elasticVersion }}"
+          env:
+            - name: ELASTIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "elk.credentialsSecret" . }}
+                  key: elastic-password
+            - name: KIBANA_URL
+              value: "http://{{ include "elk.name" (dict "root" . "component" "kibana") }}:{{ .Values.kibana.service.port }}"
+            - name: DATA_VIEW
+              value: {{ dict "override" true "data_view" (dict "id" .Values.indexPrefix "name" "Kubernetes logs" "title" (printf "%s-*" .Values.indexPrefix) "timeFieldName" "@timestamp") | toJson | quote }}
+          command:
+            - bash
+            - -c
+            - >-
+              for i in $(seq 1 60); do
+              curl -sf -o /dev/null "${KIBANA_URL}/api/status" && break;
+              echo "waiting for Kibana"; sleep 10;
+              done;
+              curl -sS --fail-with-body -u "elastic:${ELASTIC_PASSWORD}"
+              -H "kbn-xsrf: true" -H "Content-Type: application/json"
+              -X POST "${KIBANA_URL}/api/data_views/data_view" -d "${DATA_VIEW}"
+              && echo && echo "data view created"
