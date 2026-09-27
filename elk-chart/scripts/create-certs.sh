@@ -36,7 +36,7 @@ printf 'subjectAltName=DNS:%s,DNS:%s.%s,DNS:%s.%s.svc,DNS:%s.%s.svc.cluster.loca
 openssl x509 -req -in tls.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
   -days 3650 -extfile ext.cnf -out tls.crt 2>/dev/null
 
-kubectl --context "$CONTEXT" create namespace "$NAMESPACE" --dry-run=client -o yaml \
-  | kubectl --context "$CONTEXT" apply -f - >/dev/null
+kubectl --context "$CONTEXT" get namespace "$NAMESPACE" >/dev/null 2>&1 \
+  || kubectl --context "$CONTEXT" create namespace "$NAMESPACE" >/dev/null
 kc create secret generic "$SECRET" \
   --from-file=ca.crt --from-file=tls.crt --from-file=tls.key
