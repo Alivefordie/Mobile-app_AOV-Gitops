@@ -17,6 +17,9 @@ pipeline {
     RELEASE    = 'taskflow'
     CHART      = './taskflow-chart'
     KUBECONFIG = "${WORKSPACE}/.kubeconfig"
+    // params are empty on the very first run, before Jenkins has read this file
+    KIND_CLUSTER = "${params.KIND_CLUSTER ?: 'aohelm-test'}"
+    NAMESPACE    = "${params.NAMESPACE ?: 'taskflow'}"
   }
 
   stages {
@@ -83,7 +86,7 @@ pipeline {
 
   post {
     failure {
-      echo "Deploy failed. Roll back with: helm rollback ${env.RELEASE} -n ${params.NAMESPACE}"
+      echo "Deploy failed. Roll back with: helm rollback ${env.RELEASE} -n ${env.NAMESPACE}"
     }
     always {
       sh 'rm -f $KUBECONFIG'
