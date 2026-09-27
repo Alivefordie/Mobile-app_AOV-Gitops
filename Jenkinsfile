@@ -1,111 +1,282 @@
 pipeline {
-  agent any
+    agent any
 
-  options {
-    timestamps()
-    disableConcurrentBuilds()
-    timeout(time: 45, unit: 'MINUTES')
-  }
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        timeout(time: 45, unit: 'MINUTES')
+    }
 
-  parameters {
-    string(name: 'KIND_CLUSTER', defaultValue: 'aohelm-test', description: 'kind cluster to deploy to')
-    string(name: 'NAMESPACE', defaultValue: 'taskflow', description: 'Kubernetes namespace')
-  }
+    parameters {
+        string(
+      name: 'KIND_CLUSTER',
+      defaultValue: 'argocd-lab',
+      description: 'kind cluster used by Argo CD'
+    )
 
-  environment {
-    IMAGE      = 'taskflow-backend'
-    RELEASE    = 'taskflow'
-    CHART      = './taskflow-chart'
-    KUBECONFIG = "${WORKSPACE}/.kubeconfig"
-    // params are empty on the very first run, before Jenkins has read this file
-    KIND_CLUSTER = "${params.KIND_CLUSTER ?: 'aohelm-test'}"
-    NAMESPACE    = "${params.NAMESPACE ?: 'taskflow'}"
-    ELK_RELEASE   = 'elk'
-    ELK_CHART     = './elk-chart'
-    ELK_NAMESPACE = 'logging'
-  }
+        string(
+      name: 'NAMESPACE',
+      defaultValue: 'taskflow',
+      description: 'Taskflow Kubernetes namespace'
+    )
+    }
 
-  stages {
-    stage('Prepare') {
-      steps {
-        script {
-          env.TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
+    environment {
+        // Docker Registry
+        REGISTRY = 'localhost:5000'
+        IMAGE    = 'taskflow-backend'
+
+        // Helm charts
+        CHART     = './taskflow-chart'
+        ELK_CHART = './elk-chart'
+
+        // Argo CD Applications
+        ARGOCD_NAMESPACE = 'argocd'
+        TASKFLOW_APP     = 'taskflow'
+        ELK_APP          = 'elk'
+
+        // Kubernetes
+        KUBECONFIG = "${WORKSPACE}/.kubeconfig"
+
+        KIND_CLUSTER = "${params.KIND_CLUSTER ?: 'argocd-lab'}"
+        NAMESPACE    = "${params.NAMESPACE ?: 'taskflow'}"
+
+        ELK_NAMESPACE = 'logging'
+
+        // Branch watched by Argo CD
+        GITOPS_BRANCH = 'main'
+    }
+
+    stages {
+    // =========================================================
+    // CI
+    // =========================================================
+
+        stage('Prepare') {
+            steps {
+                script {
+                    def commit = sh(
+            script: 'git rev-parse --short=7 HEAD',
+            returnStdout: true
+          ).trim()
+
+                    env.TAG = "${env.BUILD_NUMBER}-${commit}"
+                    env.FULL_IMAGE = "${env.REGISTRY}/${env.IMAGE}:${env.TAG}"
+                }
+
+                echo "Commit     : ${env.GIT_COMMIT}"
+                echo "Image tag  : ${env.TAG}"
+                echo "Docker image: ${env.FULL_IMAGE}"
+            }
         }
-        echo "Image tag: ${env.TAG}"
-      }
-    }
 
-    stage('Test backend') {
-      steps {
-        dir('backend') {
-          sh 'npm ci --no-audit --no-fund'
-          sh 'npm test'
+        stage('Test backend') {
+            steps {
+                dir('backend') {
+                    sh 'npm ci --no-audit --no-fund'
+                    sh 'npm test'
+                }
+            }
         }
-      }
-    }
 
-    stage('Lint charts') {
-      steps {
-        sh 'helm lint $CHART $ELK_CHART'
-      }
-    }
-
-    stage('Build image') {
-      steps {
-        sh 'docker build -t $IMAGE:$TAG backend'
-      }
-    }
-
-    stage('Load image into kind') {
-      steps {
-        sh 'kind load docker-image $IMAGE:$TAG --name $KIND_CLUSTER'
-      }
-    }
-
-    stage('Deploy') {
-      steps {
-        // --internal: reach the API server over the kind Docker network
-        sh 'kind get kubeconfig --name $KIND_CLUSTER --internal > $KUBECONFIG'
-        withCredentials([string(credentialsId: 'taskflow-jwt-secret', variable: 'JWT_SECRET')]) {
-          sh '''
-            helm upgrade --install $RELEASE $CHART \
-              --namespace $NAMESPACE --create-namespace \
-              --set image.repository=$IMAGE \
-              --set image.tag=$TAG \
-              --set secrets.jwtSecret=$JWT_SECRET \
-              --wait --timeout 5m
-          '''
-        }
-      }
-    }
-
-    stage('Smoke test') {
-      steps {
-        sh 'helm test $RELEASE --namespace $NAMESPACE --logs'
-        sh 'kubectl -n $NAMESPACE get pods'
-      }
-    }
-
-    stage('Deploy ELK') {
-      steps {
-        // pods only restart when elk-chart changes; first install pulls ~2 GB of images
-        sh '''
-          helm upgrade --install $ELK_RELEASE $ELK_CHART \
-            --namespace $ELK_NAMESPACE --create-namespace \
-            --wait --timeout 15m
+        stage('Lint Helm charts') {
+            steps {
+                sh '''
+          helm lint $CHART
+          helm lint $ELK_CHART
         '''
-        // passes once the app's logs have reached Elasticsearch
-        sh 'helm test $ELK_RELEASE --namespace $ELK_NAMESPACE --logs --timeout 5m'
-      }
-    }
-  }
+            }
+        }
 
-  post {
-    failure {
-      echo "Deploy failed. Roll back with: helm rollback ${env.RELEASE} -n ${env.NAMESPACE}"
+    // =========================================================
+    // BUILD
+    // =========================================================
+
+        stage('Build image') {
+            steps {
+                sh '''
+          docker build \
+            -t $FULL_IMAGE \
+            backend
+        '''
+            }
+        }
+
+    // =========================================================
+    // PUBLISH
+    // =========================================================
+
+        stage('Push image') {
+            steps {
+                sh '''
+          docker push $FULL_IMAGE
+        '''
+            }
+        }
+
+    // =========================================================
+    // GITOPS
+    // =========================================================
+
+        stage('Update GitOps manifest') {
+            steps {
+                sh '''
+          echo "Updating Taskflow Helm values"
+
+          yq -i \
+            '.image.repository = strenv(REGISTRY) + "/" + strenv(IMAGE) |
+             .image.tag = strenv(TAG)' \
+            $CHART/values.yaml
+
+          echo "Updated image:"
+          yq '.image' $CHART/values.yaml
+        '''
+            }
+        }
+
+        stage('Commit GitOps change') {
+            steps {
+                sh '''
+          git config user.name "jenkins"
+          git config user.email "jenkins@taskflow.local"
+
+          git add taskflow-chart/values.yaml
+
+          if git diff --cached --quiet; then
+            echo "No GitOps changes"
+            exit 0
+          fi
+
+          git commit -m "deploy: taskflow $TAG"
+        '''
+
+                // เปลี่ยน github-ssh เป็น Jenkins credential ID ของคุณ
+                sshagent(credentials: ['github-ssh']) {
+                    sh '''
+            git push origin HEAD:$GITOPS_BRANCH
+          '''
+                }
+            }
+        }
+
+    // =========================================================
+    // ARGO CD
+    // =========================================================
+
+        stage('Connect to cluster') {
+            steps {
+                sh '''
+          kind get kubeconfig \
+            --name $KIND_CLUSTER \
+            --internal > $KUBECONFIG
+
+          kubectl cluster-info
+        '''
+            }
+        }
+
+        stage('Wait for Argo CD') {
+            steps {
+                timeout(time: 10, unit: 'MINUTES') {
+                    sh '''
+            echo "Waiting for Argo CD to synchronize Taskflow..."
+
+            while true; do
+
+              SYNC=$(kubectl -n $ARGOCD_NAMESPACE \
+                get application $TASKFLOW_APP \
+                -o jsonpath='{.status.sync.status}')
+
+              HEALTH=$(kubectl -n $ARGOCD_NAMESPACE \
+                get application $TASKFLOW_APP \
+                -o jsonpath='{.status.health.status}')
+
+              echo "Taskflow: sync=$SYNC health=$HEALTH"
+
+              if [ "$SYNC" = "Synced" ] && [ "$HEALTH" = "Healthy" ]; then
+                break
+              fi
+
+              sleep 5
+
+            done
+          '''
+                }
+            }
+        }
+
+    // =========================================================
+    // VERIFY
+    // =========================================================
+
+        stage('Verify deployment') {
+            steps {
+                sh '''
+          echo "=============================="
+          echo "Taskflow"
+          echo "=============================="
+
+          kubectl -n $NAMESPACE get pods
+          kubectl -n $NAMESPACE get svc
+
+          echo
+          echo "=============================="
+          echo "ELK"
+          echo "=============================="
+
+          kubectl -n $ELK_NAMESPACE get pods
+          kubectl -n $ELK_NAMESPACE get svc
+        '''
+            }
+        }
+
+        stage('Smoke test') {
+            steps {
+                sh '''
+          echo "Waiting for Taskflow pods..."
+
+          kubectl -n $NAMESPACE wait \
+            --for=condition=Ready \
+            pod \
+            -l app.kubernetes.io/instance=$TASKFLOW_APP \
+            --timeout=300s
+        '''
+            }
+        }
     }
-    always {
-      sh 'rm -f $KUBECONFIG'
+
+    post {
+        success {
+            echo """
+      =============================================
+      GitOps deployment completed
+      Image : ${env.FULL_IMAGE}
+      ArgoCD: ${env.TASKFLOW_APP}
+      =============================================
+      """
+        }
+
+        failure {
+            echo '''
+      =============================================
+      Pipeline failed
+
+      IMPORTANT:
+      Deployment is managed by Argo CD.
+
+      Do NOT run:
+        helm rollback
+
+      Rollback should be done by reverting
+      the GitOps commit / image tag in Git.
+      =============================================
+      '''
+        }
+
+        always {
+            sh '''
+        rm -f $KUBECONFIG
+      '''
+        }
     }
-  }
 }
