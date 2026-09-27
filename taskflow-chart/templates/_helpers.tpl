@@ -60,3 +60,36 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+PostgreSQL resource name
+*/}}
+{{- define "taskflow-chart.postgresql.fullname" -}}
+{{- printf "%s-postgresql" (include "taskflow-chart.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+PostgreSQL selector labels
+*/}}
+{{- define "taskflow-chart.postgresql.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "taskflow-chart.name" . }}-postgresql
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Database host the app connects to
+*/}}
+{{- define "taskflow-chart.databaseHost" -}}
+{{- if .Values.postgresql.enabled }}
+{{- include "taskflow-chart.postgresql.fullname" . }}
+{{- else }}
+{{- required "postgresql.externalHost is required when postgresql.enabled=false" .Values.postgresql.externalHost }}
+{{- end }}
+{{- end }}
+
+{{/*
+Name of the Secret holding app credentials
+*/}}
+{{- define "taskflow-chart.secretName" -}}
+{{- default (include "taskflow-chart.fullname" .) .Values.secrets.existingSecret }}
+{{- end }}

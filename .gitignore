@@ -1,0 +1,6 @@
+# rendered chart output (regenerate with `helm template`)
+output.yaml
+
+# local secrets
+.env
+.kubeconfig
