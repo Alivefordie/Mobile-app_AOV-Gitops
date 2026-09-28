@@ -1,6 +1,11 @@
 pipeline {
-    agent any
+    agent {
+        label 'linux-build-back'
+    }
 
+    tools {
+        nodejs 'node26'
+    }
     options {
         timestamps()
         disableConcurrentBuilds()
@@ -18,6 +23,12 @@ pipeline {
             name: 'NAMESPACE',
             defaultValue: 'taskflow',
             description: 'Taskflow Kubernetes namespace'
+        )
+
+        string(
+            name: 'KUBECONFIG_SOURCE',
+            defaultValue: '/home/jenkins/.kube/argocd-lab.config',
+            description: 'Mounted kubeconfig containing context kind-<KIND_CLUSTER>'
         )
     }
 
@@ -60,6 +71,7 @@ pipeline {
         // =========================================================
 
         KUBECONFIG = "${WORKSPACE}/.kubeconfig"
+        KUBECONFIG_SOURCE = "${params.KUBECONFIG_SOURCE ?: '/home/jenkins/.kube/argocd-lab.config'}"
 
         KIND_CLUSTER =
             "${params.KIND_CLUSTER ?: 'argocd-lab'}"
@@ -298,15 +310,34 @@ pipeline {
         stage('Connect to cluster') {
             steps {
                 sh '''
-                    kind get kubeconfig \
-                      --name $KIND_CLUSTER \
-                      --internal > $KUBECONFIG
+                    set -eu
+                    umask 077
+                    TARGET_CONTEXT="kind-${KIND_CLUSTER}"
+
+                    if [ ! -r "$KUBECONFIG_SOURCE" ]; then
+                        echo "Missing readable kubeconfig: $KUBECONFIG_SOURCE" >&2
+                        echo "Mount a kubeconfig exported from the Docker host for $TARGET_CONTEXT." >&2
+                        exit 1
+                    fi
+
+                    if ! kubectl --kubeconfig="$KUBECONFIG_SOURCE" \
+                      config get-contexts "$TARGET_CONTEXT" -o name \
+                      | grep -Fxq "$TARGET_CONTEXT"; then
+                        echo "Kubeconfig does not contain context $TARGET_CONTEXT." >&2
+                        exit 1
+                    fi
+
+                    # DinD builds images; kubectl connects to the host kind cluster.
+                    cp "$KUBECONFIG_SOURCE" "$KUBECONFIG"
+                    chmod 600 "$KUBECONFIG"
+                    kubectl config use-context "$TARGET_CONTEXT"
 
                     echo "=============================="
                     echo "Cluster"
                     echo "=============================="
 
-                    kubectl cluster-info
+                    kubectl --request-timeout=15s cluster-info
+                    kubectl --request-timeout=15s get namespace "$ARGOCD_NAMESPACE"
                 '''
             }
         }
@@ -440,7 +471,7 @@ Do not use helm rollback.
 
         always {
             sh '''
-                rm -f $KUBECONFIG
+                rm -f "$KUBECONFIG"
             '''
         }
     }
