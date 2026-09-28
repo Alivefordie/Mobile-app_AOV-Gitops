@@ -1,6 +1,11 @@
 pipeline {
-    agent any
+    agent {
+        label 'linux-build-back'
+    }
 
+    tools {
+        nodejs 'node26'
+    }
     options {
         timestamps()
         disableConcurrentBuilds()
@@ -9,169 +14,331 @@ pipeline {
 
     parameters {
         string(
-      name: 'KIND_CLUSTER',
-      defaultValue: 'argocd-lab',
-      description: 'kind cluster used by Argo CD'
-    )
+            name: 'KIND_CLUSTER',
+            defaultValue: 'argocd-lab',
+            description: 'kind cluster used by Argo CD'
+        )
 
         string(
-      name: 'NAMESPACE',
-      defaultValue: 'taskflow',
-      description: 'Taskflow Kubernetes namespace'
-    )
+            name: 'NAMESPACE',
+            defaultValue: 'taskflow',
+            description: 'Taskflow Kubernetes namespace'
+        )
+
+        string(
+            name: 'KUBECONFIG_SOURCE',
+            defaultValue: '/home/jenkins/.kube/argocd-lab.config',
+            description: 'Mounted kubeconfig containing context kind-<KIND_CLUSTER>'
+        )
     }
 
     environment {
-        // Docker Registry
-        REGISTRY = 'localhost:5000'
-        IMAGE    = 'taskflow-backend'
+        // =========================================================
+        // Docker / Registry
+        // =========================================================
 
-        // Helm charts
-        CHART     = './taskflow-chart'
-        ELK_CHART = './elk-chart'
+        // Jenkins / Docker daemon ใช้ push ไปที่ registry container
+        PUSH_REGISTRY = 'registry:5000'
 
-        // Argo CD Applications
+        // kind local registry ที่ expose ออกมาทาง host port 5001
+        DEPLOY_REGISTRY = 'localhost:5001'
+
+        IMAGE = 'taskflow-backend'
+
+        // =========================================================
+        // GitOps
+        // =========================================================
+
+        GITOPS_REPO =
+            'https://github.com/Alivefordie/test-ci-cd-gitops.git'
+
+        GITOPS_BRANCH = 'main'
+        GITOPS_DIR    = 'gitops'
+
+        TASKFLOW_CHART = 'taskflow-chart'
+        ELK_CHART      = 'elk-chart'
+
+        // =========================================================
+        // Argo CD
+        // =========================================================
+
         ARGOCD_NAMESPACE = 'argocd'
         TASKFLOW_APP     = 'taskflow'
         ELK_APP          = 'elk'
 
+        // =========================================================
         // Kubernetes
-        KUBECONFIG = "${WORKSPACE}/.kubeconfig"
+        // =========================================================
 
-        KIND_CLUSTER = "${params.KIND_CLUSTER ?: 'argocd-lab'}"
-        NAMESPACE    = "${params.NAMESPACE ?: 'taskflow'}"
+        KUBECONFIG = "${WORKSPACE}/.kubeconfig"
+        KUBECONFIG_SOURCE = "${params.KUBECONFIG_SOURCE ?: '/home/jenkins/.kube/argocd-lab.config'}"
+
+        KIND_CLUSTER =
+            "${params.KIND_CLUSTER ?: 'argocd-lab'}"
+
+        NAMESPACE =
+            "${params.NAMESPACE ?: 'taskflow'}"
 
         ELK_NAMESPACE = 'logging'
-
-        // Branch watched by Argo CD
-        GITOPS_BRANCH = 'main'
     }
 
     stages {
-    // =========================================================
-    // CI
-    // =========================================================
+        // =========================================================
+        // CI
+        // =========================================================
 
         stage('Prepare') {
             steps {
                 script {
                     def commit = sh(
-            script: 'git rev-parse --short=7 HEAD',
-            returnStdout: true
-          ).trim()
+                        script: 'git rev-parse --short=7 HEAD',
+                        returnStdout: true
+                    ).trim()
 
-                    env.TAG = "${env.BUILD_NUMBER}-${commit}"
-                    env.FULL_IMAGE = "${env.REGISTRY}/${env.IMAGE}:${env.TAG}"
+                    env.TAG =
+                        "${env.BUILD_NUMBER}-${commit}"
+
+                    env.FULL_IMAGE =
+                        "${env.PUSH_REGISTRY}/${env.IMAGE}:${env.TAG}"
+
+                    env.DEPLOY_IMAGE =
+                        "${env.DEPLOY_REGISTRY}/${env.IMAGE}:${env.TAG}"
                 }
 
-                echo "Commit     : ${env.GIT_COMMIT}"
-                echo "Image tag  : ${env.TAG}"
-                echo "Docker image: ${env.FULL_IMAGE}"
+                echo "Commit       : ${env.GIT_COMMIT}"
+                echo "Image tag    : ${env.TAG}"
+                echo "Push image   : ${env.FULL_IMAGE}"
+                echo "Deploy image : ${env.DEPLOY_IMAGE}"
             }
         }
 
         stage('Test backend') {
             steps {
                 dir('backend') {
-                    sh 'npm ci --no-audit --no-fund'
-                    sh 'npm test'
+                    sh '''
+                        npm ci --no-audit --no-fund
+                        npm test
+                    '''
+                }
+            }
+        }
+
+        // =========================================================
+        // BUILD
+        // =========================================================
+
+        stage('Build image') {
+            steps {
+                sh '''
+                    docker buildx build \
+                      --load \
+                      -t $FULL_IMAGE \
+                      backend
+                '''
+            }
+        }
+
+        // =========================================================
+        // PUBLISH
+        // =========================================================
+
+        stage('Push image') {
+            steps {
+                sh '''
+                    echo "Pushing image:"
+                    echo "$FULL_IMAGE"
+
+                    docker push $FULL_IMAGE
+                '''
+            }
+        }
+
+        // =========================================================
+        // GITOPS
+        // =========================================================
+
+        stage('Checkout GitOps repo') {
+            steps {
+                dir("${GITOPS_DIR}") {
+                    deleteDir()
+
+                    git(
+                        branch: "${GITOPS_BRANCH}",
+                        credentialsId: 'github-jenkins',
+                        url: "${GITOPS_REPO}"
+                    )
+
+                    sh '''
+                        echo "=============================="
+                        echo "GitOps repository"
+                        echo "=============================="
+
+                        git remote -v
+
+                        echo
+                        echo "Branch:"
+                        git branch --show-current
+
+                        echo
+                        echo "Commit:"
+                        git log -1 --oneline
+                    '''
                 }
             }
         }
 
         stage('Lint Helm charts') {
             steps {
-                sh '''
-          helm lint $CHART
-          helm lint $ELK_CHART
-        '''
+                dir("${GITOPS_DIR}") {
+                    sh '''
+                        echo "Lint Taskflow chart..."
+                        helm lint $TASKFLOW_CHART
+
+                        echo
+                        echo "Lint ELK chart..."
+                        helm lint $ELK_CHART
+                    '''
+                }
             }
         }
-
-    // =========================================================
-    // BUILD
-    // =========================================================
-
-        stage('Build image') {
-            steps {
-                sh '''
-          docker build \
-            -t $FULL_IMAGE \
-            backend
-        '''
-            }
-        }
-
-    // =========================================================
-    // PUBLISH
-    // =========================================================
-
-        stage('Push image') {
-            steps {
-                sh '''
-          docker push $FULL_IMAGE
-        '''
-            }
-        }
-
-    // =========================================================
-    // GITOPS
-    // =========================================================
 
         stage('Update GitOps manifest') {
             steps {
-                sh '''
-          echo "Updating Taskflow Helm values"
+                dir("${GITOPS_DIR}") {
+                    sh '''
+                        echo "=============================="
+                        echo "Updating Taskflow image"
+                        echo "=============================="
 
-          yq -i \
-            '.image.repository = strenv(REGISTRY) + "/" + strenv(IMAGE) |
-             .image.tag = strenv(TAG)' \
-            $CHART/values.yaml
+                        echo "Repository:"
+                        echo "$DEPLOY_REGISTRY/$IMAGE"
 
-          echo "Updated image:"
-          yq '.image' $CHART/values.yaml
-        '''
+                        echo
+                        echo "Tag:"
+                        echo "$TAG"
+
+                        yq -i \
+                          '.image.repository = strenv(DEPLOY_REGISTRY) + "/" + strenv(IMAGE) |
+                           .image.tag = strenv(TAG)' \
+                          $TASKFLOW_CHART/values.yaml
+
+                        echo
+                        echo "Updated image values:"
+                        yq '.image' $TASKFLOW_CHART/values.yaml
+
+                        echo
+                        echo "Git diff:"
+                        git diff -- $TASKFLOW_CHART/values.yaml
+                    '''
+                }
             }
         }
 
         stage('Commit GitOps change') {
             steps {
-                sh '''
-          git config user.name "jenkins"
-          git config user.email "jenkins@taskflow.local"
+                dir("${GITOPS_DIR}") {
+                    script {
+                        sh '''
+                            git config user.name "jenkins"
+                            git config user.email "jenkins@taskflow.local"
 
-          git add taskflow-chart/values.yaml
+                            git add $TASKFLOW_CHART/values.yaml
+                        '''
 
-          if git diff --cached --quiet; then
-            echo "No GitOps changes"
-            exit 0
-          fi
+                        def hasChanges = sh(
+                            script: 'git diff --cached --quiet',
+                            returnStatus: true
+                        )
 
-          git commit -m "deploy: taskflow $TAG"
-        '''
+                        if (hasChanges == 0) {
+                            env.GITOPS_CHANGED = 'false'
 
-                // เปลี่ยน github-ssh เป็น Jenkins credential ID ของคุณ
-                sshagent(credentials: ['github-ssh']) {
-                    sh '''
-            git push origin HEAD:$GITOPS_BRANCH
-          '''
+                            echo 'No GitOps changes'
+                        } else {
+                            env.GITOPS_CHANGED = 'true'
+
+                            sh '''
+                                echo "=============================="
+                                echo "GitOps staged diff"
+                                echo "=============================="
+
+                                git diff --cached
+
+                                git commit \
+                                  -m "deploy: taskflow $TAG"
+                            '''
+                        }
+                    }
                 }
             }
         }
 
-    // =========================================================
-    // ARGO CD
-    // =========================================================
+        stage('Push GitOps change') {
+            when {
+                expression {
+                    env.GITOPS_CHANGED == 'true'
+                }
+            }
+
+            steps {
+                dir("${GITOPS_DIR}") {
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: 'github-jenkins',
+                            usernameVariable: 'GIT_USERNAME',
+                            passwordVariable: 'GIT_TOKEN'
+                        )
+                    ]) {
+                        sh '''
+                            echo "Pushing GitOps commit..."
+
+                            git push \
+                              https://$GIT_USERNAME:$GIT_TOKEN@github.com/Alivefordie/test-ci-cd-gitops.git \
+                              HEAD:$GITOPS_BRANCH
+                        '''
+                    }
+
+                    echo "GitOps repo updated with tag: ${env.TAG}"
+                }
+            }
+        }
+
+        // =========================================================
+        // ARGO CD
+        // =========================================================
 
         stage('Connect to cluster') {
             steps {
                 sh '''
-          kind get kubeconfig \
-            --name $KIND_CLUSTER \
-            --internal > $KUBECONFIG
+                    set -eu
+                    umask 077
+                    TARGET_CONTEXT="kind-${KIND_CLUSTER}"
 
-          kubectl cluster-info
-        '''
+                    if [ ! -r "$KUBECONFIG_SOURCE" ]; then
+                        echo "Missing readable kubeconfig: $KUBECONFIG_SOURCE" >&2
+                        echo "Mount a kubeconfig exported from the Docker host for $TARGET_CONTEXT." >&2
+                        exit 1
+                    fi
+
+                    if ! kubectl --kubeconfig="$KUBECONFIG_SOURCE" \
+                      config get-contexts "$TARGET_CONTEXT" -o name \
+                      | grep -Fxq "$TARGET_CONTEXT"; then
+                        echo "Kubeconfig does not contain context $TARGET_CONTEXT." >&2
+                        exit 1
+                    fi
+
+                    # DinD builds images; kubectl connects to the host kind cluster.
+                    cp "$KUBECONFIG_SOURCE" "$KUBECONFIG"
+                    chmod 600 "$KUBECONFIG"
+                    kubectl config use-context "$TARGET_CONTEXT"
+
+                    echo "=============================="
+                    echo "Cluster"
+                    echo "=============================="
+
+                    kubectl --request-timeout=15s cluster-info
+                    kubectl --request-timeout=15s get namespace "$ARGOCD_NAMESPACE"
+                '''
             }
         }
 
@@ -179,68 +346,89 @@ pipeline {
             steps {
                 timeout(time: 10, unit: 'MINUTES') {
                     sh '''
-            echo "Waiting for Argo CD to synchronize Taskflow..."
+                        echo "Waiting for Argo CD..."
 
-            while true; do
+                        while true; do
 
-              SYNC=$(kubectl -n $ARGOCD_NAMESPACE \
-                get application $TASKFLOW_APP \
-                -o jsonpath='{.status.sync.status}')
+                          SYNC=$(kubectl \
+                            -n $ARGOCD_NAMESPACE \
+                            get application $TASKFLOW_APP \
+                            -o jsonpath='{.status.sync.status}')
 
-              HEALTH=$(kubectl -n $ARGOCD_NAMESPACE \
-                get application $TASKFLOW_APP \
-                -o jsonpath='{.status.health.status}')
+                          HEALTH=$(kubectl \
+                            -n $ARGOCD_NAMESPACE \
+                            get application $TASKFLOW_APP \
+                            -o jsonpath='{.status.health.status}')
 
-              echo "Taskflow: sync=$SYNC health=$HEALTH"
+                          REVISION=$(kubectl \
+                            -n $ARGOCD_NAMESPACE \
+                            get application $TASKFLOW_APP \
+                            -o jsonpath='{.status.sync.revision}')
 
-              if [ "$SYNC" = "Synced" ] && [ "$HEALTH" = "Healthy" ]; then
-                break
-              fi
+                          echo "sync=$SYNC health=$HEALTH revision=$REVISION"
 
-              sleep 5
+                          if [ "$SYNC" = "Synced" ] && \
+                             [ "$HEALTH" = "Healthy" ]; then
 
-            done
-          '''
+                            echo "Argo CD synchronization completed"
+
+                            break
+                          fi
+
+                          sleep 5
+
+                        done
+                    '''
                 }
             }
         }
 
-    // =========================================================
-    // VERIFY
-    // =========================================================
+        // =========================================================
+        // VERIFY
+        // =========================================================
 
         stage('Verify deployment') {
             steps {
                 sh '''
-          echo "=============================="
-          echo "Taskflow"
-          echo "=============================="
+                    echo "=============================="
+                    echo "Taskflow"
+                    echo "=============================="
 
-          kubectl -n $NAMESPACE get pods
-          kubectl -n $NAMESPACE get svc
+                    kubectl -n $NAMESPACE get pods
 
-          echo
-          echo "=============================="
-          echo "ELK"
-          echo "=============================="
+                    echo
+                    kubectl -n $NAMESPACE get svc
 
-          kubectl -n $ELK_NAMESPACE get pods
-          kubectl -n $ELK_NAMESPACE get svc
-        '''
+                    echo
+                    echo "=============================="
+                    echo "Deployment images"
+                    echo "=============================="
+
+                    kubectl -n $NAMESPACE \
+                      get deployment \
+                      -o custom-columns=NAME:.metadata.name,IMAGE:.spec.template.spec.containers[*].image
+
+                    echo
+                    echo "=============================="
+                    echo "ELK"
+                    echo "=============================="
+
+                    kubectl -n $ELK_NAMESPACE get pods
+                '''
             }
         }
 
         stage('Smoke test') {
             steps {
                 sh '''
-          echo "Waiting for Taskflow pods..."
+                    echo "Waiting for Taskflow pods..."
 
-          kubectl -n $NAMESPACE wait \
-            --for=condition=Ready \
-            pod \
-            -l app.kubernetes.io/instance=$TASKFLOW_APP \
-            --timeout=300s
-        '''
+                    kubectl -n $NAMESPACE wait \
+                      --for=condition=Ready \
+                      pod \
+                      -l app.kubernetes.io/instance=$TASKFLOW_APP \
+                      --timeout=300s
+                '''
             }
         }
     }
@@ -248,35 +436,43 @@ pipeline {
     post {
         success {
             echo """
-      =============================================
-      GitOps deployment completed
-      Image : ${env.FULL_IMAGE}
-      ArgoCD: ${env.TASKFLOW_APP}
-      =============================================
-      """
+=============================================
+GitOps deployment completed
+
+Push image:
+${env.FULL_IMAGE}
+
+Deploy image:
+${env.DEPLOY_IMAGE}
+
+GitOps repo:
+${env.GITOPS_REPO}
+
+Argo CD application:
+${env.TASKFLOW_APP}
+=============================================
+"""
         }
 
         failure {
             echo '''
-      =============================================
-      Pipeline failed
+=============================================
+Pipeline failed
 
-      IMPORTANT:
-      Deployment is managed by Argo CD.
+Deployment is managed by Argo CD.
 
-      Do NOT run:
-        helm rollback
+Rollback by reverting the GitOps commit
+or restoring the previous image tag.
 
-      Rollback should be done by reverting
-      the GitOps commit / image tag in Git.
-      =============================================
-      '''
+Do not use helm rollback.
+=============================================
+'''
         }
 
         always {
             sh '''
-        rm -f $KUBECONFIG
-      '''
+                rm -f "$KUBECONFIG"
+            '''
         }
     }
 }
