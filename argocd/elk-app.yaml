@@ -9,7 +9,7 @@ spec:
   project: default
 
   source:
-    repoURL: https://github.com/Pongohisut007/test-ci-cd.git
+    repoURL: https://github.com/Alivefordie/test-ci-cd-gitops.git
     targetRevision: main
     path: elk-chart
 

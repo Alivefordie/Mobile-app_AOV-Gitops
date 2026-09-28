@@ -23,15 +23,14 @@ pipeline {
 
     environment {
         // =========================================================
-        // Docker
+        // Docker / Registry
         // =========================================================
 
-        // Jenkins / DinD ใช้ push เข้า registry container
+        // Jenkins / Docker daemon ใช้ push ไปที่ registry container
         PUSH_REGISTRY = 'registry:5000'
 
-        // image name ที่เขียนลง GitOps repo
-        // ปรับตาม kind local-registry configuration ของคุณ
-        DEPLOY_REGISTRY = 'localhost:5000'
+        // kind local registry ที่ expose ออกมาทาง host port 5001
+        DEPLOY_REGISTRY = 'localhost:5001'
 
         IMAGE = 'taskflow-backend'
 
@@ -39,10 +38,11 @@ pipeline {
         // GitOps
         // =========================================================
 
-        GITOPS_REPO   = 'git@github.com:Alivefordie/test-ci-cd-gitops.git'
-        GITOPS_BRANCH = 'main'
+        GITOPS_REPO =
+            'https://github.com/Alivefordie/test-ci-cd-gitops.git'
 
-        GITOPS_DIR = 'gitops'
+        GITOPS_BRANCH = 'main'
+        GITOPS_DIR    = 'gitops'
 
         TASKFLOW_CHART = 'taskflow-chart'
         ELK_CHART      = 'elk-chart'
@@ -61,8 +61,11 @@ pipeline {
 
         KUBECONFIG = "${WORKSPACE}/.kubeconfig"
 
-        KIND_CLUSTER = "${params.KIND_CLUSTER ?: 'argocd-lab'}"
-        NAMESPACE    = "${params.NAMESPACE ?: 'taskflow'}"
+        KIND_CLUSTER =
+            "${params.KIND_CLUSTER ?: 'argocd-lab'}"
+
+        NAMESPACE =
+            "${params.NAMESPACE ?: 'taskflow'}"
 
         ELK_NAMESPACE = 'logging'
     }
@@ -80,13 +83,12 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
-                    env.TAG = "${env.BUILD_NUMBER}-${commit}"
+                    env.TAG =
+                        "${env.BUILD_NUMBER}-${commit}"
 
-                    // image ที่ Jenkins build + push
                     env.FULL_IMAGE =
                         "${env.PUSH_REGISTRY}/${env.IMAGE}:${env.TAG}"
 
-                    // image ที่ Kubernetes จะ deploy
                     env.DEPLOY_IMAGE =
                         "${env.DEPLOY_REGISTRY}/${env.IMAGE}:${env.TAG}"
                 }
@@ -101,14 +103,16 @@ pipeline {
         stage('Test backend') {
             steps {
                 dir('backend') {
-                    sh 'npm ci --no-audit --no-fund'
-                    sh 'npm test'
+                    sh '''
+                        npm ci --no-audit --no-fund
+                        npm test
+                    '''
                 }
             }
         }
 
         // =========================================================
-        // Build
+        // BUILD
         // =========================================================
 
         stage('Build image') {
@@ -122,10 +126,15 @@ pipeline {
             }
         }
 
+        // =========================================================
+        // PUBLISH
+        // =========================================================
+
         stage('Push image') {
             steps {
                 sh '''
-                    echo "Pushing $FULL_IMAGE"
+                    echo "Pushing image:"
+                    echo "$FULL_IMAGE"
 
                     docker push $FULL_IMAGE
                 '''
@@ -133,7 +142,7 @@ pipeline {
         }
 
         // =========================================================
-        // GitOps
+        // GITOPS
         // =========================================================
 
         stage('Checkout GitOps repo') {
@@ -143,20 +152,23 @@ pipeline {
 
                     git(
                         branch: "${GITOPS_BRANCH}",
-                        credentialsId: 'github-ssh',
+                        credentialsId: 'github-jenkins',
                         url: "${GITOPS_REPO}"
                     )
 
                     sh '''
-                        echo "GitOps repository:"
+                        echo "=============================="
+                        echo "GitOps repository"
+                        echo "=============================="
+
                         git remote -v
 
                         echo
-                        echo "Current branch:"
+                        echo "Branch:"
                         git branch --show-current
 
                         echo
-                        echo "Current commit:"
+                        echo "Commit:"
                         git log -1 --oneline
                     '''
                 }
@@ -167,7 +179,11 @@ pipeline {
             steps {
                 dir("${GITOPS_DIR}") {
                     sh '''
+                        echo "Lint Taskflow chart..."
                         helm lint $TASKFLOW_CHART
+
+                        echo
+                        echo "Lint ELK chart..."
                         helm lint $ELK_CHART
                     '''
                 }
@@ -178,8 +194,16 @@ pipeline {
             steps {
                 dir("${GITOPS_DIR}") {
                     sh '''
-                        echo "Updating Taskflow image..."
-                        echo "Image: $DEPLOY_IMAGE"
+                        echo "=============================="
+                        echo "Updating Taskflow image"
+                        echo "=============================="
+
+                        echo "Repository:"
+                        echo "$DEPLOY_REGISTRY/$IMAGE"
+
+                        echo
+                        echo "Tag:"
+                        echo "$TAG"
 
                         yq -i \
                           '.image.repository = strenv(DEPLOY_REGISTRY) + "/" + strenv(IMAGE) |
@@ -216,11 +240,16 @@ pipeline {
 
                         if (hasChanges == 0) {
                             env.GITOPS_CHANGED = 'false'
+
                             echo 'No GitOps changes'
                         } else {
                             env.GITOPS_CHANGED = 'true'
 
                             sh '''
+                                echo "=============================="
+                                echo "GitOps staged diff"
+                                echo "=============================="
+
                                 git diff --cached
 
                                 git commit \
@@ -242,28 +271,28 @@ pipeline {
             steps {
                 dir("${GITOPS_DIR}") {
                     withCredentials([
-                        sshUserPrivateKey(
-                            credentialsId: 'github-ssh',
-                            keyFileVariable: 'SSH_KEY',
-                            usernameVariable: 'SSH_USER'
+                        usernamePassword(
+                            credentialsId: 'github-jenkins',
+                            usernameVariable: 'GIT_USERNAME',
+                            passwordVariable: 'GIT_TOKEN'
                         )
                     ]) {
                         sh '''
-                            export GIT_SSH_COMMAND="ssh \
-                              -i $SSH_KEY \
-                              -o StrictHostKeyChecking=no"
+                            echo "Pushing GitOps commit..."
 
-                            git push origin HEAD:$GITOPS_BRANCH
+                            git push \
+                              https://$GIT_USERNAME:$GIT_TOKEN@github.com/Alivefordie/test-ci-cd-gitops.git \
+                              HEAD:$GITOPS_BRANCH
                         '''
                     }
 
-                    echo "GitOps repo updated: ${env.TAG}"
+                    echo "GitOps repo updated with tag: ${env.TAG}"
                 }
             }
         }
 
         // =========================================================
-        // Argo CD
+        // ARGO CD
         // =========================================================
 
         stage('Connect to cluster') {
@@ -272,6 +301,10 @@ pipeline {
                     kind get kubeconfig \
                       --name $KIND_CLUSTER \
                       --internal > $KUBECONFIG
+
+                    echo "=============================="
+                    echo "Cluster"
+                    echo "=============================="
 
                     kubectl cluster-info
                 '''
@@ -307,6 +340,7 @@ pipeline {
                              [ "$HEALTH" = "Healthy" ]; then
 
                             echo "Argo CD synchronization completed"
+
                             break
                           fi
 
@@ -319,7 +353,7 @@ pipeline {
         }
 
         // =========================================================
-        // Verify
+        // VERIFY
         // =========================================================
 
         stage('Verify deployment') {
@@ -330,11 +364,13 @@ pipeline {
                     echo "=============================="
 
                     kubectl -n $NAMESPACE get pods
+
+                    echo
                     kubectl -n $NAMESPACE get svc
 
                     echo
                     echo "=============================="
-                    echo "Deployment image"
+                    echo "Deployment images"
                     echo "=============================="
 
                     kubectl -n $NAMESPACE \
@@ -369,22 +405,22 @@ pipeline {
     post {
         success {
             echo """
-			=============================================
-			GitOps deployment completed
+=============================================
+GitOps deployment completed
 
-			Build image:
-			${env.FULL_IMAGE}
+Push image:
+${env.FULL_IMAGE}
 
-			Deploy image:
-			${env.DEPLOY_IMAGE}
+Deploy image:
+${env.DEPLOY_IMAGE}
 
-			GitOps repo:
-			${env.GITOPS_REPO}
+GitOps repo:
+${env.GITOPS_REPO}
 
-			Argo CD application:
-			${env.TASKFLOW_APP}
-			=============================================
-		"""
+Argo CD application:
+${env.TASKFLOW_APP}
+=============================================
+"""
         }
 
         failure {
@@ -394,11 +430,10 @@ Pipeline failed
 
 Deployment is managed by Argo CD.
 
-Rollback:
-revert the GitOps commit or restore the
-previous image tag in Git.
+Rollback by reverting the GitOps commit
+or restoring the previous image tag.
 
-Do not use helm rollback for this deployment.
+Do not use helm rollback.
 =============================================
 '''
         }
