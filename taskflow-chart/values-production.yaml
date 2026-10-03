@@ -1,6 +1,6 @@
 replicaCount: 1
 image:
-  tag: "6cb670b"
+  tag: "671ef30"
   repository: registry:5000/taskflow-api
 config:
   nodeEnv: production
