@@ -1,0 +1,7 @@
+replicaCount: 1
+
+image:
+  tag: "6b0e7f4"
+
+config:
+  nodeEnv: production

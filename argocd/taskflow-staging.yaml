@@ -1,8 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
-
 metadata:
-  name: elk
+  name: taskflow-staging
   namespace: argocd
 
 spec:
@@ -11,18 +10,19 @@ spec:
   source:
     repoURL: https://github.com/Pongohisut007/test-ci-cd.git
     targetRevision: main
-    path: elk-chart
+    path: taskflow-chart
 
     helm:
       valueFiles:
-        - values.yaml
+        - values-staging.yaml
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: logging
+    namespace: taskflow-staging
 
   syncPolicy:
     automated:
+      enabled: true
       prune: true
       selfHeal: true
 
