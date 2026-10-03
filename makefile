@@ -40,3 +40,11 @@ kubectl get application taskflow-staging -n argocd -o yaml
 
 kubectl get application taskflow-staging -n argocd \
   -o jsonpath='{.spec.source.repoURL}{"\n"}{.spec.source.targetRevision}{"\n"}{.spec.source.path}{"\n"}{.spec.source.helm.valueFiles}{"\n"}'
+
+kubectl get ns | grep taskflow
+
+kubectl get all -n taskflow-staging
+kubectl get all -n taskflow-production
+
+curl http://localhost:5000/v2/_catalog
+curl http://localhost:5000/v2/taskflow-api/tags/list
