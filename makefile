@@ -27,7 +27,7 @@ kubectl port-forward \
   svc/argocd-server \
   -n argocd \
   8081:443
-
+# user: admin
 kubectl \
   -n argocd \
   get secret argocd-initial-admin-secret \
