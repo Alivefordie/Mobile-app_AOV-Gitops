@@ -243,7 +243,7 @@ readinessProbe:
   timeoutSeconds: 5
 
 # https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-health.html#request-params wait_for_status
-clusterHealthCheckParams: "wait_for_status=green&timeout=1s"
+# (set near the top of this file: single node => yellow)
 
 ## Use an alternate scheduler.
 ## ref: https://kubernetes.io/docs/tasks/administer-cluster/configure-multiple-schedulers/
