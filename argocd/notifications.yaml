@@ -1,0 +1,240 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-notifications-cm
+  namespace: argocd
+
+data:
+  # =========================================================
+  # Discord Webhook Service
+  # =========================================================
+  service.webhook.discord: |
+    url: $discord-webhook-url
+    headers:
+      - name: Content-Type
+        value: application/json
+
+  # =========================================================
+  # Sync Succeeded
+  # =========================================================
+  template.app-sync-succeeded: |
+    webhook:
+      discord:
+        method: POST
+        body: |
+          {
+            "username": "Argo CD",
+            "embeds": [
+              {
+                "title": "✅ Deployment Succeeded",
+                "description": "**{{.app.metadata.name}}** was synchronized successfully.",
+                "color": 3066993,
+                "fields": [
+                  {
+                    "name": "🌍 Environment",
+                    "value": "{{if eq .app.metadata.name `taskflow-production`}}`production`{{else}}`staging`{{end}}",
+                    "inline": true
+                  },
+                  {
+                    "name": "🔄 Sync",
+                    "value": "`{{.app.status.sync.status}}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "💚 Health",
+                    "value": "`{{.app.status.health.status}}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "📦 Application",
+                    "value": "`{{.app.metadata.name}}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "☸️ Namespace",
+                    "value": "`{{.app.spec.destination.namespace}}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "🌿 Git Revision",
+                    "value": "`{{.app.spec.source.targetRevision}}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "🔖 GitOps Commit",
+                    "value": "`{{.app.status.sync.revision}}`",
+                    "inline": false
+                  },
+                  {
+                    "name": "🐳 Deployed Image",
+                    "value": "{{if .app.status.summary.images}}`{{index .app.status.summary.images 0}}`{{else}}`N/A`{{end}}",
+                    "inline": false
+                  },
+                  {
+                    "name": "📂 Chart",
+                    "value": "`{{.app.spec.source.path}}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "📡 Repository",
+                    "value": "{{.app.spec.source.repoURL}}",
+                    "inline": false
+                  }
+                ],
+                "footer": {
+                  "text": "TaskFlow CD • Argo CD"
+                },
+                "timestamp": "{{.app.status.operationState.finishedAt}}"
+              }
+            ]
+          }
+
+  # =========================================================
+  # Sync Failed
+  # =========================================================
+  template.app-sync-failed: |
+    webhook:
+      discord:
+        method: POST
+        body: |
+          {
+            "username": "Argo CD",
+            "embeds": [
+              {
+                "title": "❌ Deployment Failed",
+                "description": "**{{.app.metadata.name}}** failed during synchronization.",
+                "color": 15158332,
+                "fields": [
+                  {
+                    "name": "🌍 Environment",
+                    "value": "{{if eq .app.metadata.name `taskflow-production`}}`production`{{else}}`staging`{{end}}",
+                    "inline": true
+                  },
+                  {
+                    "name": "🔄 Sync",
+                    "value": "`{{.app.status.sync.status}}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "❤️ Health",
+                    "value": "`{{.app.status.health.status}}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "📦 Application",
+                    "value": "`{{.app.metadata.name}}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "☸️ Namespace",
+                    "value": "`{{.app.spec.destination.namespace}}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "🌿 Git Revision",
+                    "value": "`{{.app.spec.source.targetRevision}}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "🔖 GitOps Commit",
+                    "value": "`{{.app.status.sync.revision}}`",
+                    "inline": false
+                  },
+                  {
+                    "name": "🐳 Target Image",
+                    "value": "{{if .app.status.summary.images}}`{{index .app.status.summary.images 0}}`{{else}}`N/A`{{end}}",
+                    "inline": false
+                  },
+                  {
+                    "name": "💥 Error",
+                    "value": "{{if .app.status.operationState.message}}```{{.app.status.operationState.message}}```{{else}}`No error message reported`{{end}}",
+                    "inline": false
+                  }
+                ],
+                "footer": {
+                  "text": "TaskFlow CD • Argo CD"
+                },
+                "timestamp": "{{.app.status.operationState.finishedAt}}"
+              }
+            ]
+          }
+
+  # =========================================================
+  # Health Degraded
+  # =========================================================
+  template.app-health-degraded: |
+    webhook:
+      discord:
+        method: POST
+        body: |
+          {
+            "username": "Argo CD",
+            "embeds": [
+              {
+                "title": "⚠️ Application Health Degraded",
+                "description": "**{{.app.metadata.name}}** is deployed but is reporting degraded health.",
+                "color": 15105570,
+                "fields": [
+                  {
+                    "name": "🌍 Environment",
+                    "value": "{{if eq .app.metadata.name `taskflow-production`}}`production`{{else}}`staging`{{end}}",
+                    "inline": true
+                  },
+                  {
+                    "name": "🔄 Sync",
+                    "value": "`{{.app.status.sync.status}}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "⚠️ Health",
+                    "value": "`{{.app.status.health.status}}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "📦 Application",
+                    "value": "`{{.app.metadata.name}}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "☸️ Namespace",
+                    "value": "`{{.app.spec.destination.namespace}}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "🔖 GitOps Commit",
+                    "value": "`{{.app.status.sync.revision}}`",
+                    "inline": false
+                  },
+                  {
+                    "name": "🐳 Deployed Image",
+                    "value": "{{if .app.status.summary.images}}`{{index .app.status.summary.images 0}}`{{else}}`N/A`{{end}}",
+                    "inline": false
+                  }
+                ],
+                "footer": {
+                  "text": "TaskFlow CD • Argo CD"
+                }
+              }
+            ]
+          }
+
+  # =========================================================
+  # Triggers
+  # =========================================================
+  trigger.on-sync-succeeded: |
+    - description: Application sync succeeded
+      send:
+        - app-sync-succeeded
+      when: app.status.operationState.phase == 'Succeeded'
+
+  trigger.on-sync-failed: |
+    - description: Application sync failed
+      send:
+        - app-sync-failed
+      when: app.status.operationState.phase in ['Error', 'Failed']
+
+  trigger.on-health-degraded: |
+    - description: Application health degraded
+      send:
+        - app-health-degraded
+      when: app.status.health.status == 'Degraded'

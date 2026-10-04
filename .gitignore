@@ -4,3 +4,5 @@ output.yaml
 # local secrets
 .env
 .kubeconfig
+
+secret-temp.yaml
