@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-CLUSTER_NAME ?= kind-argocd-project
+CLUSTER_NAME ?= argocd-project
 KIND_CONFIG ?= kind-config.yaml
 
 ARGOCD_NAMESPACE ?= argocd
