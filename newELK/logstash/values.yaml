@@ -19,6 +19,55 @@ logstashPipeline:
         port => 5044
       }
     }
+
+    filter {
+      # 1) Drop noise: Kubernetes system pods and the ELK stack's own logs
+      #    (otherwise ES/Logstash logs about indexing get indexed again).
+      if [kubernetes][namespace] in ["kube-system", "local-path-storage", "logging"] {
+        drop { }
+      }
+
+      # 2) Tag the environment from the namespace: taskflow-staging -> staging
+      if [kubernetes][namespace] =~ /^taskflow-/ {
+        mutate {
+          add_field => { "env" => "%{[kubernetes][namespace]}" }
+        }
+        mutate {
+          gsub => ["env", "^taskflow-", ""]
+        }
+      }
+
+      # 3) JSON log lines become searchable fields under "app" (e.g. app.userId)
+      if [message] =~ /^\s*\{/ {
+        json {
+          source => "message"
+          target => "app"
+          skip_on_invalid_json => true
+        }
+      }
+
+      # 4) Find the log level anywhere in the line (INFO, warn, ERROR, ...)
+      grok {
+        match => { "message" => "%{LOGLEVEL:[log][level]}" }
+        tag_on_failure => []
+      }
+      if [log][level] {
+        mutate {
+          lowercase => ["[log][level]"]
+        }
+        if [log][level] in ["error", "err", "fatal", "crit", "critical", "alert", "emerg", "emergency"] {
+          mutate {
+            add_tag => ["error"]
+          }
+        }
+      }
+
+      # 5) Remove Filebeat bookkeeping fields nobody searches on
+      mutate {
+        remove_field => ["agent", "ecs", "input"]
+      }
+    }
+
     output {
       elasticsearch {
         hosts => ["https://elasticsearch-master:9200"]
