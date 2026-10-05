@@ -45,6 +45,20 @@ postgresql:
     storageClass: ""
 
   resources: {}
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: "7.4-alpine"
+    pullPolicy: IfNotPresent
+
+  externalUrl: ""
+  port: 6379
+  persistence:
+    size: 512Mi
+    storageClass: ""
+
+  resources: {}
 serviceAccount:
   create: true
   automount: false
