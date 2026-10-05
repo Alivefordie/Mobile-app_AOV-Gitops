@@ -1,5 +1,5 @@
 replicaCount: 1
 image:
-  tag: "9749c78a0e9925b09a692eda8e2b2a67a5d24c6a"
+  tag: "fa5bdb9edf91130a6339b969c06e6ab9a83fdc66"
 config:
   nodeEnv: staging
