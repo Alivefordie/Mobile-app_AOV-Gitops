@@ -1,5 +1,5 @@
 replicaCount: 1
 image:
-  tag: "e927a36"
+  tag: "1.0.0"
 config:
   nodeEnv: production
