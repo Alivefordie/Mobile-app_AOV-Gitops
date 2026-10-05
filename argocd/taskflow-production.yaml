@@ -11,7 +11,7 @@ spec:
   project: default
 
   source:
-    repoURL: https://github.com/Alivefordie/Mobile-app_AOV-Gitops.git
+    repoURL: https://github.com/aovPro/Mobile-app_AOV-Gitops.git
     targetRevision: main
     path: taskflow-chart
 

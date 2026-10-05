@@ -11,8 +11,8 @@ spec:
   project: default
 
   source:
-    repoURL: https://github.com/Pongohisut007/testcd.git
-    targetRevision: test
+    repoURL: https://github.com/aovPro/Mobile-app_AOV-Gitops.git
+    targetRevision: main
     path: taskflow-chart
 
     helm:

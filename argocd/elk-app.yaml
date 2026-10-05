@@ -12,8 +12,8 @@ spec:
   project: default
 
   source:
-    repoURL: https://github.com/Pongohisut007/testcd.git
-    targetRevision: test
+    repoURL: https://github.com/aovPro/Mobile-app_AOV-Gitops.git
+    targetRevision: main
     path: newELK/elasticsearch
 
     helm:
@@ -64,7 +64,7 @@ spec:
   project: default
 
   source:
-    repoURL: https://github.com/Pongohisut007/testcd.git
+    repoURL: https://github.com/aovPro/Mobile-app_AOV-Gitops.git
     targetRevision: test
     path: newELK/logstash
 
@@ -103,7 +103,7 @@ spec:
   project: default
 
   source:
-    repoURL: https://github.com/Pongohisut007/testcd.git
+    repoURL: https://github.com/aovPro/Mobile-app_AOV-Gitops.git
     targetRevision: test
     path: newELK/kibana
 
@@ -142,7 +142,7 @@ spec:
   project: default
 
   source:
-    repoURL: https://github.com/Pongohisut007/testcd.git
+    repoURL: https://github.com/aovPro/Mobile-app_AOV-Gitops.git
     targetRevision: test
     path: newELK/filebeat
 
