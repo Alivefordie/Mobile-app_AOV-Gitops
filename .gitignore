@@ -6,3 +6,7 @@ output.yaml
 .kubeconfig
 
 secret-temp.yaml
+
+# sealed-secrets private keys (make secret-key-export)
+sealed-secrets-key*.yaml
+*.tmp
