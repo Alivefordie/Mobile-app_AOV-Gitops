@@ -1,6 +1,6 @@
 replicaCount: 1
 image:
-  repository: registry:5000/taskflow-api
+  repository: docker.io/pongphisut/taskflow-api
   pullPolicy: IfNotPresent
   tag: ""
 

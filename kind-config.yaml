@@ -12,8 +12,3 @@ nodes:
         protocol: TCP
 
   - role: worker
-
-containerdConfigPatches:
-  - |-
-    [plugins."io.containerd.grpc.v1.cri".registry]
-      config_path = "/etc/containerd/certs.d"

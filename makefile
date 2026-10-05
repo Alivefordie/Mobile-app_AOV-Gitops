@@ -12,8 +12,6 @@ PRODUCTION_APP ?= taskflow-production
 STAGING_NAMESPACE ?= argocd
 PRODUCTION_NAMESPACE ?= argocd
 
-REGISTRY ?= registry
-REGISTRY_PORT ?= 5000
 
 
 .PHONY: \
@@ -67,34 +65,6 @@ cluster-list:
 
 cluster-nodes:
 	kubectl get nodes -o wide
-
-
-# ==================================================
-# Local Registry
-# ==================================================
-
-registry-inspect:
-	docker inspect $(REGISTRY) \
-		--format '{{json .NetworkSettings.Networks}}' | jq
-
-
-registry-connect:
-	@docker network inspect kind \
-		--format '{{json .Containers}}' | \
-		grep -q '"$(REGISTRY)"' || \
-		docker network connect kind $(REGISTRY)
-
-
-registry-setup:
-	bash scripts/kind-registry.sh
-
-
-registry-catalog:
-	curl http://localhost:$(REGISTRY_PORT)/v2/_catalog
-
-
-registry-tags:
-	curl http://localhost:$(REGISTRY_PORT)/v2/taskflow-api/tags/list
 
 
 # ==================================================

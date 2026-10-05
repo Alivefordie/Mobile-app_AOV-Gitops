@@ -1,6 +1,5 @@
 replicaCount: 1
 image:
   tag: "9749c78a0e9925b09a692eda8e2b2a67a5d24c6a"
-  repository: registry:5000/taskflow-api
 config:
   nodeEnv: staging
