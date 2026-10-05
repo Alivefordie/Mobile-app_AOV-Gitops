@@ -1,12 +1,13 @@
+# k3s ServiceLB (klipper-lb) binds LoadBalancer ports directly on the node,
+# so the app is reachable at http://<node-ip>:80 without MetalLB.
 service:
-  type: NodePort
+  type: LoadBalancer
 
 ports:
   web:
     expose:
       default: true
     exposedPort: 80
-    nodePort: 30080
 
   websecure:
     expose:

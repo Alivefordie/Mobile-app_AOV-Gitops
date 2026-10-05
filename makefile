@@ -9,9 +9,8 @@ ARGOCD_PORT ?= 8081
 STAGING_APP ?= taskflow-staging
 PRODUCTION_APP ?= taskflow-production
 
-STAGING_NAMESPACE ?= argocd
-PRODUCTION_NAMESPACE ?= argocd
-
+STAGING_NAMESPACE ?= taskflow-staging
+PRODUCTION_NAMESPACE ?= taskflow-production
 
 
 .PHONY: \
