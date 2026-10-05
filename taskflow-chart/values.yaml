@@ -23,6 +23,8 @@ secrets:
   r2AccessKeyId: ""
   r2SecretAccessKey: ""
   r2BucketName: ""
+  # Secret created outside Git (e.g. PSU_AI_API_KEY); loaded as extra env vars
+  extraEnvSecret: taskflow-extra-env
 postgresql:
   enabled: true
   image:
