@@ -1,0 +1,17 @@
+service:
+  type: NodePort
+
+ports:
+  web:
+    expose:
+      default: true
+    exposedPort: 80
+    nodePort: 30080
+
+  websecure:
+    expose:
+      default: false
+
+providers:
+  kubernetesIngress:
+    enabled: true

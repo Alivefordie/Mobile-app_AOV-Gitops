@@ -5,6 +5,12 @@ name: argocd-project
 
 nodes:
   - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8888
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+
   - role: worker
 
 containerdConfigPatches:
