@@ -53,6 +53,11 @@ spec:
                 name: {{ include "taskflow-chart.fullname" . }}
             - secretRef:
                 name: {{ include "taskflow-chart.secretName" . }}
+            {{- with .Values.secrets.extraEnvSecret }}
+            - secretRef:
+                name: {{ . }}
+                optional: true
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.containerPort }}

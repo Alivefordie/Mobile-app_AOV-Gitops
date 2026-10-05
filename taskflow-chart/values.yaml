@@ -23,6 +23,8 @@ secrets:
   r2AccessKeyId: ""
   r2SecretAccessKey: ""
   r2BucketName: ""
+  # Secret created outside Git (e.g. PSU_AI_API_KEY); loaded as extra env vars
+  extraEnvSecret: taskflow-extra-env
 postgresql:
   enabled: true
   image:
@@ -40,6 +42,20 @@ postgresql:
   port: 5432
   persistence:
     size: 1Gi
+    storageClass: ""
+
+  resources: {}
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: "7.4-alpine"
+    pullPolicy: IfNotPresent
+
+  externalUrl: ""
+  port: 6379
+  persistence:
+    size: 512Mi
     storageClass: ""
 
   resources: {}

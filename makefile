@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-CLUSTER_NAME ?= kind-argocd-project
+CLUSTER_NAME ?= argocd-project
 KIND_CONFIG ?= kind-config.yaml
 
 ARGOCD_NAMESPACE ?= argocd
@@ -188,6 +188,34 @@ workloads:
 	@echo "Production"
 	@echo "========================================"
 	kubectl get all -n $(PRODUCTION_NAMESPACE)
+
+
+# ==================================================
+# ELK (namespace logging)
+# ==================================================
+
+LOGGING_NAMESPACE ?= logging
+KIBANA_PORT ?= 5601
+
+elk-pods:
+	kubectl get pods -n $(LOGGING_NAMESPACE)
+
+
+# http://localhost:5601
+kibana-port-forward:
+	kubectl port-forward \
+		svc/kibana-kibana \
+		-n $(LOGGING_NAMESPACE) \
+		$(KIBANA_PORT):5601
+
+
+# user: elastic
+elastic-password:
+	@kubectl \
+		-n $(LOGGING_NAMESPACE) \
+		get secret elasticsearch-master-credentials \
+		-o jsonpath='{.data.password}' | base64 -d
+	@echo
 
 
 # ==================================================

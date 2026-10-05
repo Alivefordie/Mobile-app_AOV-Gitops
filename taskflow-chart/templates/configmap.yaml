@@ -13,3 +13,4 @@ data:
   DB_SYNCHRONIZE: {{ .Values.config.dbSynchronize | quote }}
   JWT_EXPIRES_IN: {{ .Values.config.jwtExpiresIn | quote }}
   BCRYPT_SALT_ROUNDS: {{ .Values.config.bcryptSaltRounds | quote }}
+  REDIS_URL: {{ include "taskflow-chart.redisUrl" . | quote }}
