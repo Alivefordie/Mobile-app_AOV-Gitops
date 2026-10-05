@@ -1,19 +1,75 @@
+# ELK stack (Filebeat -> Logstash -> Elasticsearch -> Kibana) in namespace "logging".
+# Each component is its own Helm chart under newELK/, so each gets its own Application.
+# Logstash/Kibana/Filebeat need the Elasticsearch secrets; until those exist their
+# pods/hooks fail and are retried, so no explicit ordering is needed.
+
 apiVersion: argoproj.io/v1alpha1
 kind: Application
-
 metadata:
-  name: elk
+  name: elk-elasticsearch
   namespace: argocd
-
 spec:
   project: default
 
   source:
-    repoURL: https://github.com/Alivefordie/Mobile-app_AOV-Gitops.git
-    targetRevision: main
-    path: elk-chart
+    repoURL: https://github.com/Pongohisut007/testcd.git
+    targetRevision: test
+    path: newELK/elasticsearch
 
     helm:
+      releaseName: elasticsearch
+      valueFiles:
+        - values.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+
+  # The chart generates the password (randAlphaNum) and TLS certs (genCA) on every
+  # render. Keep whatever was created on the first sync instead of rotating them.
+  ignoreDifferences:
+    - kind: Secret
+      name: elasticsearch-master-credentials
+      jsonPointers:
+        - /data
+    - kind: Secret
+      name: elasticsearch-master-certs
+      jsonPointers:
+        - /data
+
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: true
+      selfHeal: true
+
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: elk-logstash
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/Pongohisut007/testcd.git
+    targetRevision: test
+    path: newELK/logstash
+
+    helm:
+      releaseName: logstash
       valueFiles:
         - values.yaml
 
@@ -23,8 +79,94 @@ spec:
 
   syncPolicy:
     automated:
+      enabled: true
       prune: true
       selfHeal: true
 
     syncOptions:
       - CreateNamespace=true
+
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: elk-kibana
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/Pongohisut007/testcd.git
+    targetRevision: test
+    path: newELK/kibana
+
+    helm:
+      releaseName: kibana
+      valueFiles:
+        - values.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: true
+      selfHeal: true
+
+    syncOptions:
+      - CreateNamespace=true
+
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: elk-filebeat
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/Pongohisut007/testcd.git
+    targetRevision: test
+    path: newELK/filebeat
+
+    helm:
+      releaseName: filebeat
+      valueFiles:
+        - values.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: true
+      selfHeal: true
+
+    syncOptions:
+      - CreateNamespace=true
+
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

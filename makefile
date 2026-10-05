@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-CLUSTER_NAME ?= kind-argocd-project
+CLUSTER_NAME ?= argocd-project
 KIND_CONFIG ?= kind-config.yaml
 
 ARGOCD_NAMESPACE ?= argocd
@@ -44,7 +44,11 @@ REGISTRY_PORT ?= 5000
 	notify-success \
 	notify-failed \
 	notify-degraded \
-	status
+	status \
+	secret-seal \
+	secret-cert \
+	secret-key-export \
+	secret-key-import
 
 
 # ==================================================
@@ -191,6 +195,34 @@ workloads:
 
 
 # ==================================================
+# ELK (namespace logging)
+# ==================================================
+
+LOGGING_NAMESPACE ?= logging
+KIBANA_PORT ?= 5601
+
+elk-pods:
+	kubectl get pods -n $(LOGGING_NAMESPACE)
+
+
+# http://localhost:5601
+kibana-port-forward:
+	kubectl port-forward \
+		svc/kibana-kibana \
+		-n $(LOGGING_NAMESPACE) \
+		$(KIBANA_PORT):5601
+
+
+# user: elastic
+elastic-password:
+	@kubectl \
+		-n $(LOGGING_NAMESPACE) \
+		get secret elasticsearch-master-credentials \
+		-o jsonpath='{.data.password}' | base64 -d
+	@echo
+
+
+# ==================================================
 # Argo CD Notifications
 # ==================================================
 
@@ -326,18 +358,59 @@ change-cluster-namespace:
 		-o jsonpath='{.current-context}{" -> "}{..namespace}{"\n"}'
 # make change-cluster-namespace STAGING_NAMESPACE=taskflow-staging
 # kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/latest/download/controller.yaml
+SEALED_SECRETS_NAME ?= sealed-secrets-controller
+SEALED_SECRETS_NAMESPACE ?= kube-system
 secret-seal:
-	@read -p "Save as name: " FILE_NAME; \
+	@[ -f secret-temp.yaml ] || { echo "ERROR: secret-temp.yaml not found"; exit 1; }; \
+	kubectl get svc "$(SEALED_SECRETS_NAME)" -n "$(SEALED_SECRETS_NAMESPACE)" >/dev/null 2>&1 || { \
+		echo "ERROR: Sealed Secrets controller '$(SEALED_SECRETS_NAME)' not found in namespace '$(SEALED_SECRETS_NAMESPACE)'"; \
+		echo "Install it: kubectl apply -f argocd/apps/sealed-secrets.yaml"; \
+		exit 1; \
+	}; \
+	read -p "Save as name: " FILE_NAME; \
+	[ -n "$$FILE_NAME" ] || { echo "ERROR: name cannot be empty"; exit 1; }; \
 	case "$$FILE_NAME" in \
 		*.*) ;; \
 		*) FILE_NAME="$$FILE_NAME.yaml" ;; \
 	esac; \
+	OUT="argocd/secrets/$$FILE_NAME"; \
 	kubeseal \
-		--controller-name sealed-secrets-controller \
-		--controller-namespace kube-system \
+		--controller-name "$(SEALED_SECRETS_NAME)" \
+		--controller-namespace "$(SEALED_SECRETS_NAMESPACE)" \
 		--format yaml \
 		< secret-temp.yaml \
-		> argocd/secrets/$$FILE_NAME; \
-	echo "Sealed secret created: argocd/secrets/$$FILE_NAME"
+		> "$$OUT.tmp" || { rm -f "$$OUT.tmp"; echo "ERROR: kubeseal failed"; exit 1; }; \
+	mv "$$OUT.tmp" "$$OUT"; \
+	echo "Sealed secret created: $$OUT"
+
+SEALED_SECRETS_KEY_FILE ?= sealed-secrets-key.yaml
+SEALED_SECRETS_CERT_FILE ?= pub-cert.pem
+
+# Public cert: safe to share/commit; lets others seal without cluster access
+secret-cert:
+	kubeseal \
+		--controller-name "$(SEALED_SECRETS_NAME)" \
+		--controller-namespace "$(SEALED_SECRETS_NAMESPACE)" \
+		--fetch-cert > "$(SEALED_SECRETS_CERT_FILE)"
+	@echo "Public cert saved: $(SEALED_SECRETS_CERT_FILE)"
+
+# Private keys: NEVER commit; share only over a secure channel
+secret-key-export:
+	@kubectl -n "$(SEALED_SECRETS_NAMESPACE)" get secret \
+		-l sealedsecrets.bitnami.com/sealed-secrets-key \
+		-o yaml > "$(SEALED_SECRETS_KEY_FILE).tmp" || { rm -f "$(SEALED_SECRETS_KEY_FILE).tmp"; exit 1; }; \
+	grep -q "kind: Secret" "$(SEALED_SECRETS_KEY_FILE).tmp" || { \
+		rm -f "$(SEALED_SECRETS_KEY_FILE).tmp"; \
+		echo "ERROR: no sealing keys found in namespace '$(SEALED_SECRETS_NAMESPACE)'"; \
+		exit 1; \
+	}; \
+	mv "$(SEALED_SECRETS_KEY_FILE).tmp" "$(SEALED_SECRETS_KEY_FILE)"; \
+	echo "Private keys exported: $(SEALED_SECRETS_KEY_FILE) (DO NOT COMMIT)"
+
+secret-key-import:
+	@[ -f "$(SEALED_SECRETS_KEY_FILE)" ] || { echo "ERROR: $(SEALED_SECRETS_KEY_FILE) not found"; exit 1; }; \
+	kubectl apply -f "$(SEALED_SECRETS_KEY_FILE)" && \
+	kubectl -n "$(SEALED_SECRETS_NAMESPACE)" rollout restart deploy/"$(SEALED_SECRETS_NAME)" && \
+	kubectl -n "$(SEALED_SECRETS_NAMESPACE)" rollout status deploy/"$(SEALED_SECRETS_NAME)"
 
 # 	secret-temp.yaml

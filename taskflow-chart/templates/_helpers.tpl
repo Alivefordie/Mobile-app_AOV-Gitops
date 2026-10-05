@@ -88,6 +88,32 @@ Database host the app connects to
 {{- end }}
 
 {{/*
+Redis resource name
+*/}}
+{{- define "taskflow-chart.redis.fullname" -}}
+{{- printf "%s-redis" (include "taskflow-chart.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Redis selector labels
+*/}}
+{{- define "taskflow-chart.redis.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "taskflow-chart.name" . }}-redis
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Redis URL the app connects to
+*/}}
+{{- define "taskflow-chart.redisUrl" -}}
+{{- if .Values.redis.enabled }}
+{{- printf "redis://%s:%v" (include "taskflow-chart.redis.fullname" .) .Values.redis.port }}
+{{- else }}
+{{- required "redis.externalUrl is required when redis.enabled=false" .Values.redis.externalUrl }}
+{{- end }}
+{{- end }}
+
+{{/*
 Name of the Secret holding app credentials
 */}}
 {{- define "taskflow-chart.secretName" -}}
