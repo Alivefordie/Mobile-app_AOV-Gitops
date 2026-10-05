@@ -12,7 +12,7 @@ spec:
 
   source:
     repoURL: https://github.com/aovPro/Mobile-app_AOV-Gitops.git
-    targetRevision: develop
+    targetRevision: main
     path: taskflow-chart
 
     helm:
