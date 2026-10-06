@@ -19,7 +19,7 @@ config:
   jwtExpiresIn: 7d
   bcryptSaltRounds: "10"
 migration:
-  enabled: false
+  enabled: true
 secrets:
   existingSecret: ""
   jwtSecret: change-me-in-real-deployments

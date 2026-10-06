@@ -5,7 +5,7 @@ config:
   nodeEnv: production
   appEnv: staging
 migration:
-  enabled: false
+  enabled: true
 ingress:
   enabled: true
   className: traefik
