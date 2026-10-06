@@ -11,7 +11,7 @@ ingress:
   className: traefik
   hosts:
     # nip.io resolves <anything>.172.30.58.25.nip.io to 172.30.58.25 (Traefik LB)
-    # - host: staging.172.30.58.25.nip.io
-    paths:
-      - path: /
-        pathType: Prefix
+    - host: staging.alivefordie.site
+      paths:
+        - path: /
+          pathType: Prefix

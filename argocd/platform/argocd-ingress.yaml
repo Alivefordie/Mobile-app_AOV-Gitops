@@ -23,7 +23,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - host: argocd.172.30.58.25.nip.io
+    - host: argocd.alivefordie.site
       http:
         paths:
           - path: /
