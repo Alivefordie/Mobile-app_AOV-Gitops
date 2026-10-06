@@ -1,0 +1,104 @@
+# Overrides for the vendored elastic/metricbeat 8.5.1 chart on the on-prem k3s node.
+# Metrics go to Logstash on the Azure ELK VM (same mTLS client cert as Filebeat);
+# Logstash routes [@metadata][beat] == "metricbeat" to the metricbeat-8.5.1 data
+# stream (template, ILM 7d and Kibana dashboards were created by `metricbeat setup`).
+
+daemonset:
+  # Node + pod/container metrics from the kubelet, plus host CPU/memory/network.
+  # hostNetwork: host network metrics, and NODE_NAME resolves via the host's /etc/hosts.
+  hostNetworking: true
+  extraEnvs: []
+  secretMounts:
+    # SealedSecret: argocd/secrets/filebeat-logstash-certs.yaml
+    - name: filebeat-logstash-certs
+      secretName: filebeat-logstash-certs
+      path: /usr/share/metricbeat/certs/
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "100Mi"
+    limits:
+      cpu: "500m"
+      memory: "200Mi"
+  metricbeatConfig:
+    metricbeat.yml: |
+      metricbeat.modules:
+        - module: kubernetes
+          period: 30s
+          metricsets: [node, system, pod, container, volume]
+          host: "${NODE_NAME}"
+          hosts: ["https://${NODE_NAME}:10250"]
+          bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+          # k3s kubelet serves a self-signed cert
+          ssl.verification_mode: "none"
+          processors:
+            - add_kubernetes_metadata: ~
+        # Disk usage of the node comes from the kubelet (node metricset);
+        # only /proc and cgroups are mounted, so filesystem/fsstat are left out.
+        - module: system
+          period: 30s
+          metricsets: [cpu, load, memory, network, process, process_summary, socket_summary, uptime]
+          process.include_top_n: { by_cpu: 5, by_memory: 5 }
+
+      processors:
+        - add_host_metadata: ~
+
+      output.logstash:
+        hosts: ["20.196.144.165:5044"]
+        ssl.certificate_authorities: ["/usr/share/metricbeat/certs/ca.crt"]
+        ssl.certificate: "/usr/share/metricbeat/certs/filebeat.crt"
+        ssl.key: "/usr/share/metricbeat/certs/filebeat.key"
+
+deployment:
+  # Cluster-wide state (pods, deployments, restarts, PVCs) from kube-state-metrics.
+  extraEnvs: []
+  secretMounts:
+    - name: filebeat-logstash-certs
+      secretName: filebeat-logstash-certs
+      path: /usr/share/metricbeat/certs/
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "100Mi"
+    limits:
+      cpu: "500m"
+      memory: "200Mi"
+  metricbeatConfig:
+    metricbeat.yml: |
+      metricbeat.modules:
+        - module: kubernetes
+          period: 30s
+          metricsets:
+            - state_node
+            - state_deployment
+            - state_daemonset
+            - state_statefulset
+            - state_replicaset
+            - state_pod
+            - state_container
+            - state_persistentvolumeclaim
+          hosts: ["${KUBE_STATE_METRICS_HOSTS}"]
+        - module: kubernetes
+          metricsets: [event]
+
+      output.logstash:
+        hosts: ["20.196.144.165:5044"]
+        ssl.certificate_authorities: ["/usr/share/metricbeat/certs/ca.crt"]
+        ssl.certificate: "/usr/share/metricbeat/certs/filebeat.crt"
+        ssl.key: "/usr/share/metricbeat/certs/filebeat.key"
+
+kube_state_metrics:
+  enabled: true
+
+kube-state-metrics:
+  # Chart 4.7.0 ships v2.4.1 from the frozen k8s.gcr.io; v2.4 only supports
+  # Kubernetes up to 1.23 and this cluster runs 1.36.
+  image:
+    repository: registry.k8s.io/kube-state-metrics/kube-state-metrics
+    tag: v2.13.0
+  resources:
+    requests:
+      cpu: "20m"
+      memory: "50Mi"
+    limits:
+      memory: "150Mi"

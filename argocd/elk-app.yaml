@@ -1,7 +1,9 @@
-# Logging: Filebeat (this cluster, namespace "logging") -> Logstash -> Elasticsearch -> Kibana.
-# Logstash, Elasticsearch and Kibana run on the Azure ELK VM (/opt/elk, docker compose),
-# so only Filebeat is deployed here. It ships to Logstash at 20.196.144.165:5044 over
-# mutual TLS using the certs in argocd/secrets/filebeat-logstash-certs.yaml.
+# Logging + metrics -> Logstash on the Azure ELK VM (/opt/elk, docker compose),
+# which writes to Elasticsearch; Kibana runs there too. Only the shippers run here:
+#   elk-filebeat   container logs        -> logs-* data stream
+#   elk-metricbeat node/pod/state metrics -> metricbeat-8.5.1 data stream
+# Both reach Logstash at 20.196.144.165:5044 over mutual TLS using the certs in
+# argocd/secrets/filebeat-logstash-certs.yaml.
 
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -20,6 +22,48 @@ spec:
       releaseName: filebeat
       valueFiles:
         - values.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: true
+      selfHeal: true
+
+    syncOptions:
+      - CreateNamespace=true
+
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+
+---
+# Host, pod/container and cluster-state metrics -> Logstash on the Azure ELK VM
+# (routed to the metricbeat-8.5.1 data stream). Includes kube-state-metrics.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: elk-metricbeat
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/aovPro/Mobile-app_AOV-Gitops.git
+    targetRevision: main
+    path: newELK/metricbeat
+
+    helm:
+      releaseName: metricbeat
+      valueFiles:
+        - values.yaml
+        - values-k3s.yaml
 
   destination:
     server: https://kubernetes.default.svc
