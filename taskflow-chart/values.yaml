@@ -13,9 +13,13 @@ fullnameOverride: ""
 containerPort: 3000
 
 config:
+  nodeEnv: production
+  appEnv: production
   dbSynchronize: "true"
   jwtExpiresIn: 7d
   bcryptSaltRounds: "10"
+migration:
+  enabled: false
 secrets:
   existingSecret: ""
   jwtSecret: change-me-in-real-deployments

@@ -2,10 +2,13 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ include "taskflow-chart.fullname" . }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
   labels:
     {{- include "taskflow-chart.labels" . | nindent 4 }}
 data:
   NODE_ENV: {{ .Values.config.nodeEnv | quote }}
+  APP_ENV: {{ .Values.config.appEnv | quote }}
   PORT: {{ .Values.containerPort | quote }}
   DB_HOST: {{ include "taskflow-chart.databaseHost" . | quote }}
   DB_PORT: {{ .Values.postgresql.port | quote }}

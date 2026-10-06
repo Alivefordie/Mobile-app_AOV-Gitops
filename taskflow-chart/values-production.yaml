@@ -3,6 +3,9 @@ image:
   tag: "1.0.0"
 config:
   nodeEnv: production
+  appEnv: production
+migration:
+  enabled: false
 ingress:
   enabled: true
   className: traefik
