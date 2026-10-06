@@ -1,6 +1,6 @@
 replicaCount: 1
 image:
-  tag: "1.0.0"
+  tag: "22f6867c79730cd964e619256b2f887035bc0293"
 config:
   nodeEnv: staging
 ingress:
