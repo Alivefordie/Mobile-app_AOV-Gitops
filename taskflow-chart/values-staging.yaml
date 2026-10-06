@@ -1,11 +1,11 @@
 replicaCount: 1
 image:
-  tag: "4ce2385bed66422a1f6dcbf03bb3cfb88716e759"
+  tag: "9e7bac0446b12649a030586c1f4aa0ec09023881"
 config:
   nodeEnv: production
   appEnv: staging
 migration:
-  enabled: false
+  enabled: true
 ingress:
   enabled: true
   className: traefik
