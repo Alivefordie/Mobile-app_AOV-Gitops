@@ -1,6 +1,6 @@
 replicaCount: 1
 image:
-  tag: "9e7bac0446b12649a030586c1f4aa0ec09023881"
+  tag: "1e1cf94c65cda022dd1fc1363bbb016413907888"
 config:
   nodeEnv: production
   appEnv: staging
