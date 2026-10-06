@@ -5,7 +5,9 @@ config:
   nodeEnv: production
   appEnv: production
 migration:
-  enabled: true
+  # Off until a baseline migration exists: run-migrations refuses a database
+  # without users/recipes, so the Sync hook would fail every production sync.
+  enabled: false
 ingress:
   enabled: true
   className: traefik
