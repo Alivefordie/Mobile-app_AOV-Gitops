@@ -16,3 +16,10 @@ ports:
 providers:
   kubernetesIngress:
     enabled: true
+
+# One JSON line per request on stdout. Filebeat ships it to the Azure ELK;
+# Logstash turns it into url.route / http.response.status_code / env so Kibana
+# can show the endpoints that fail most often.
+accessLog:
+  enabled: true
+  format: json
