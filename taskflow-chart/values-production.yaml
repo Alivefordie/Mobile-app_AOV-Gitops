@@ -13,7 +13,7 @@ ingress:
   className: traefik
   hosts:
     # nip.io resolves <anything>.172.30.58.25.nip.io to 172.30.58.25 (Traefik LB)
-    - host: api.172.30.58.25.nip.io
-      paths:
-        - path: /
-          pathType: Prefix
+    # - host: api.172.30.58.25.nip.io
+    paths:
+      - path: /
+        pathType: Prefix
