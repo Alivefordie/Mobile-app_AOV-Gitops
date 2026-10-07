@@ -1,6 +1,6 @@
 replicaCount: 1
 image:
-  tag: "c4f1ae15ee1ae8123e7c76f3f495f15c4c09bff1"
+  tag: "c05f57c27c77b418c7f5afee0727547830147895"
 config:
   nodeEnv: production
   appEnv: production
